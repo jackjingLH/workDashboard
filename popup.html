@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工作流聚合助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <header class="header">
+      <h1 class="title">📊 工作台</h1>
+      <div class="actions">
+        <button id="refreshBtn" class="btn btn-icon" title="刷新数据">
+          <span class="icon">🔄</span>
+        </button>
+        <button id="settingsBtn" class="btn btn-icon" title="设置">
+          <span class="icon">⚙️</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 最后更新时间 -->
+    <div class="update-info">
+      <span id="lastUpdateTime">未更新</span>
+    </div>
+
+    <!-- 加载中状态 -->
+    <div id="loading" class="loading" style="display: none;">
+      <div class="spinner"></div>
+      <p>正在加载数据...</p>
+    </div>
+
+    <!-- 主内容区 -->
+    <main id="content" class="content">
+
+      <!-- 设置面板（默认隐藏） -->
+      <div id="settingsPanel" class="settings-panel" style="display: none;">
+        <h2>系统配置</h2>
+
+        <div class="system-config">
+          <h3>
+            <input type="checkbox" id="oaEnabled">
+            <label for="oaEnabled">OA 系统</label>
+          </h3>
+          <input type="text" id="oaUrl" placeholder="http://oa.company.com" class="input-url">
+        </div>
+
+        <div class="system-config">
+          <h3>
+            <input type="checkbox" id="zentaoEnabled">
+            <label for="zentaoEnabled">禅道</label>
+          </h3>
+          <input type="text" id="zentaoUrl" placeholder="http://zentao.company.com" class="input-url">
+        </div>
+
+        <div class="system-config">
+          <h3>
+            <input type="checkbox" id="gitlabEnabled">
+            <label for="gitlabEnabled">GitLab</label>
+          </h3>
+          <input type="text" id="gitlabUrl" placeholder="http://gitlab.company.com" class="input-url">
+        </div>
+
+        <div class="system-config">
+          <h3>AI 工作总结</h3>
+
+          <label for="aiProvider">AI 服务商:</label>
+          <select id="aiProvider" class="input-url" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px;">
+            <option value="zhipu">智谱 AI (GLM-4-Flash 免费)</option>
+            <option value="aliyun">阿里云 (通义千问)</option>
+            <option value="openai">OpenAI (ChatGPT)</option>
+            <option value="relay">OpenAI 中转 (国内可用)</option>
+          </select>
+
+          <label for="aiApiKey">API Key:</label>
+          <input type="password" id="aiApiKey" placeholder="请输入 API Key" class="input-url">
+
+          <small id="aiProviderHelp" style="color: #999; font-size: 12px; display: block; margin-top: 4px;">
+            获取 API Key: <a id="aiProviderLink" href="https://open.bigmodel.cn/" target="_blank" style="color: #667eea;">open.bigmodel.cn</a>
+          </small>
+        </div>
+
+        <!-- SerpAPI 图片搜索配置 -->
+        <div class="system-config">
+          <h3>菜品图片搜索</h3>
+
+          <label for="serpapiEngine">搜索引擎:</label>
+          <select id="serpapiEngine" class="input-url" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px;">
+            <option value="bing">Bing 图片 (推荐)</option>
+            <option value="google">Google 图片 (需代理)</option>
+          </select>
+
+          <label for="serpapiApiKey">SerpAPI Key:</label>
+          <input type="password" id="serpapiApiKey" placeholder="请输入 SerpAPI Key (可选)" class="input-url">
+
+          <small style="color: #999; font-size: 12px; display: block; margin-top: 4px;">
+            注册获取: <a href="https://serpapi.com/" target="_blank" style="color: #667eea;">serpapi.com</a> (免费 100 次/月)
+            <br>
+            ⚠️ 如不配置，菜品详情将不显示图片
+          </small>
+        </div>
+
+        <div class="button-group">
+          <button id="saveConfigBtn" class="btn btn-primary">保存配置</button>
+          <button id="cancelConfigBtn" class="btn btn-secondary">取消</button>
+        </div>
+      </div>
+
+      <!-- 数据展示面板 -->
+      <div id="dashboardPanel" class="dashboard-panel">
+
+        <!-- OA 系统 -->
+        <section class="system-section" id="oaSection" style="display: none;">
+          <h2 class="section-title">
+            <span class="icon">📋</span>
+            OA 系统
+            <select id="oaDateRange" class="date-range-select" title="日期范围">
+              <option value="today">今天</option>
+              <option value="week">本周</option>
+              <option value="month">本月</option>
+            </select>
+          </h2>
+          <div class="section-content">
+            <!-- 未登录提示 -->
+            <div id="oaLoginReminder" class="login-reminder" style="display: none;">
+              <p>⚠️ 您尚未登录 OA 系统</p>
+              <a id="oaLoginLink" href="#" target="_blank" class="login-link">点击前往登录</a>
+            </div>
+
+            <div id="oaDataContent">
+              <div class="info-item">
+                <span class="label">工作日志:</span>
+                <span class="value" id="oaLogStatus">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">日志数量:</span>
+                <span class="value" id="oaLogCount">-</span>
+              </div>
+              <!-- 未填写提醒 -->
+              <div id="oaLogReminder" class="log-reminder" style="display: none;">
+                ⚠️ 今日工作日志未填写，请在下午5点前完成填写
+              </div>
+
+              <!-- 食堂菜单 -->
+              <div class="canteen-menu" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <h4 style="font-size: 13px; color: #667eea; margin: 0;">🍽️ 本周食堂菜单</h4>
+                  <button id="toggleCanteenBtn" class="btn-link" style="font-size: 12px; color: #667eea; background: none; border: none; cursor: pointer;">
+                    展开 ▼
+                  </button>
+                </div>
+                <div id="canteenMenuList" class="canteen-menu-list" style="display: none;">
+                  <!-- 菜单内容将通过 JS 动态生成 -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 禅道 -->
+        <section class="system-section" id="zentaoSection" style="display: none;">
+          <h2 class="section-title">
+            <span class="icon">🐛</span>
+            禅道
+          </h2>
+          <div class="section-content">
+            <div class="info-item">
+              <span class="label">待处理任务:</span>
+              <span class="value" id="zentaoTasks">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">待修复 Bug:</span>
+              <span class="value" id="zentaoBugs">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">待评审需求:</span>
+              <span class="value" id="zentaoStories">-</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- GitLab -->
+        <section class="system-section" id="gitlabSection" style="display: none;">
+          <h2 class="section-title">
+            <span class="icon">🦊</span>
+            GitLab
+          </h2>
+          <div class="section-content">
+            <div class="info-item">
+              <span class="label">今日提交:</span>
+              <span class="value" id="gitlabCommits">-</span>
+            </div>
+          </div>
+
+          <!-- AI 工作总结 -->
+          <div class="ai-summary-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+            <button id="generateSummaryBtn" class="btn btn-primary" style="width: 100%; font-size: 13px;">
+              🤖 生成工作总结
+            </button>
+
+            <!-- 总结加载中 -->
+            <div id="summaryLoading" class="summary-loading" style="display: none; text-align: center; padding: 12px;">
+              <div class="spinner" style="width: 20px; height: 20px; margin: 0 auto 8px;"></div>
+              <p style="font-size: 12px; color: #999;">AI 正在生成总结...</p>
+            </div>
+
+            <!-- 总结结果 -->
+            <div id="summaryResult" class="summary-result" style="display: none; margin-top: 12px;">
+              <h4 style="font-size: 13px; color: #667eea; margin-bottom: 8px;">📝 今日工作总结</h4>
+              <div id="summaryContent" style="font-size: 12px; line-height: 1.6; color: #333; white-space: pre-wrap;"></div>
+            </div>
+
+            <!-- 错误提示 -->
+            <div id="summaryError" class="summary-error" style="display: none; margin-top: 12px; padding: 8px; background: #fee; border-radius: 4px; font-size: 12px; color: #c00;"></div>
+          </div>
+        </section>
+
+        <!-- 未配置提示 -->
+        <div id="emptyState" class="empty-state">
+          <p>👋 欢迎使用工作流聚合助手！</p>
+          <p>点击右上角 ⚙️ 图标配置你的工作系统</p>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- 底部 -->
+    <footer class="footer">
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <!-- 菜品详情侧边栏 -->
+  <div id="dish-overlay" class="dish-overlay"></div>
+  <div id="dish-sidebar" class="dish-sidebar">
+    <!-- 内容由 JavaScript 动态生成 -->
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

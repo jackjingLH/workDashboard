@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>生成图标</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #667eea; }
+    canvas {
+      border: 1px solid #ddd;
+      margin: 10px;
+      border-radius: 4px;
+    }
+    .buttons {
+      margin-top: 20px;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-right: 10px;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    .info {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e0e7ff;
+      border-radius: 6px;
+      color: #4c51bf;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 工作流聚合助手 - 图标生成器</h1>
+    <p>点击下方按钮生成并下载扩展图标</p>
+
+    <div id="canvasContainer">
+      <canvas id="canvas16" width="16" height="16"></canvas>
+      <canvas id="canvas48" width="48" height="48"></canvas>
+      <canvas id="canvas128" width="128" height="128"></canvas>
+    </div>
+
+    <div class="buttons">
+      <button onclick="generateIcons()">生成图标</button>
+      <button onclick="downloadAll()">下载所有图标</button>
+    </div>
+
+    <div class="info">
+      <strong>使用说明：</strong><br>
+      1. 点击「生成图标」按钮预览图标效果<br>
+      2. 点击「下载所有图标」保存图标文件<br>
+      3. 将下载的图标放到项目的 icons 目录下<br>
+      4. 图标文件名应为: icon16.png, icon48.png, icon128.png
+    </div>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+
+      // 渐变背景
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+
+      // 绘制简化的图表图标
+      ctx.strokeStyle = 'white';
+      ctx.fillStyle = 'white';
+      ctx.lineWidth = Math.max(1, size / 32);
+
+      const padding = size * 0.2;
+      const chartWidth = size - padding * 2;
+      const chartHeight = size - padding * 2;
+
+      // 绘制三个柱状图
+      const barWidth = chartWidth / 5;
+      const bars = [0.6, 0.8, 0.5];
+
+      bars.forEach((height, i) => {
+        const x = padding + (i * 2) * barWidth;
+        const barHeight = chartHeight * height;
+        const y = padding + chartHeight - barHeight;
+
+        ctx.fillRect(x, y, barWidth * 0.8, barHeight);
+      });
+    }
+
+    function generateIcons() {
+      drawIcon(document.getElementById('canvas16'), 16);
+      drawIcon(document.getElementById('canvas48'), 48);
+      drawIcon(document.getElementById('canvas128'), 128);
+    }
+
+    function downloadCanvas(canvas, filename) {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function downloadAll() {
+      downloadCanvas(document.getElementById('canvas16'), 'icon16.png');
+      setTimeout(() => {
+        downloadCanvas(document.getElementById('canvas48'), 'icon48.png');
+      }, 500);
+      setTimeout(() => {
+        downloadCanvas(document.getElementById('canvas128'), 'icon128.png');
+      }, 1000);
+
+      alert('图标下载完成！请将文件移动到 work-dashboard/icons/ 目录下');
+    }
+
+    // 页面加载时自动生成
+    window.onload = generateIcons;
+  </script>
+</body>
+</html>
