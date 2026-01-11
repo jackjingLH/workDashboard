@@ -35,7 +35,19 @@ const elements = {
   toggleCanteenBtn: document.getElementById('toggleCanteenBtn'),
   canteenMenuList: document.getElementById('canteenMenuList'),
   zentaoSection: document.getElementById('zentaoSection'),
+  zentaoLoginReminder: document.getElementById('zentaoLoginReminder'),
+  zentaoLoginLink: document.getElementById('zentaoLoginLink'),
+  zentaoDataContent: document.getElementById('zentaoDataContent'),
+  toggleTasksBtn: document.getElementById('toggleTasksBtn'),
+  toggleBugsBtn: document.getElementById('toggleBugsBtn'),
+  zentaoTasksList: document.getElementById('zentaoTasksList'),
+  zentaoBugsList: document.getElementById('zentaoBugsList'),
   gitlabSection: document.getElementById('gitlabSection'),
+  gitlabDateRange: document.getElementById('gitlabDateRange'),
+  gitlabLoginReminder: document.getElementById('gitlabLoginReminder'),
+  gitlabLoginLink: document.getElementById('gitlabLoginLink'),
+  gitlabDataContent: document.getElementById('gitlabDataContent'),
+  gitlabCommitsLabel: document.getElementById('gitlabCommitsLabel'),
 
   // AI 总结相关
   aiProvider: document.getElementById('aiProvider'),
@@ -46,6 +58,13 @@ const elements = {
   summaryResult: document.getElementById('summaryResult'),
   summaryContent: document.getElementById('summaryContent'),
   summaryError: document.getElementById('summaryError'),
+
+  // Bug AI 总结相关
+  generateBugSummaryBtn: document.getElementById('generateBugSummaryBtn'),
+  bugSummaryLoading: document.getElementById('bugSummaryLoading'),
+  bugSummaryResult: document.getElementById('bugSummaryResult'),
+  bugSummaryContent: document.getElementById('bugSummaryContent'),
+  bugSummaryError: document.getElementById('bugSummaryError'),
 
   // SerpAPI 图片搜索相关
   serpapiEngine: document.getElementById('serpapiEngine'),
@@ -108,10 +127,36 @@ function bindEvents() {
     await onOADateRangeChange();
   });
 
+  // GitLab 日期范围切换
+  elements.gitlabDateRange.addEventListener('change', async () => {
+    await onGitLabDateRangeChange();
+  });
+
   // 食堂菜单展开/收起
   elements.toggleCanteenBtn.addEventListener('click', () => {
     toggleCanteenMenu();
   });
+
+  // 禅道任务展开/收起
+  if (elements.toggleTasksBtn) {
+    elements.toggleTasksBtn.addEventListener('click', () => {
+      toggleZentaoList('tasks');
+    });
+  }
+
+  // 禅道Bug展开/收起
+  if (elements.toggleBugsBtn) {
+    elements.toggleBugsBtn.addEventListener('click', () => {
+      toggleZentaoList('bugs');
+    });
+  }
+
+  // Bug AI 总结
+  if (elements.generateBugSummaryBtn) {
+    elements.generateBugSummaryBtn.addEventListener('click', async () => {
+      await generateBugSummary();
+    });
+  }
 
   // 食堂菜单菜品点击事件
   bindCanteenEvents();
@@ -180,7 +225,8 @@ async function saveConfig() {
     gitlab: {
       name: 'GitLab',
       enabled: elements.gitlabEnabled.checked,
-      baseURL: elements.gitlabUrl.value.trim()
+      baseURL: elements.gitlabUrl.value.trim(),
+      dateRange: currentConfig?.gitlab?.dateRange || 'today'
     },
     zhipu: {
       name: '智谱AI',
@@ -239,14 +285,14 @@ function hideSettings() {
  */
 async function loadData() {
   try {
-    const result = await chrome.storage.local.get(['data', 'lastUpdate', 'errors', 'oaLoginError']);
+    const result = await chrome.storage.local.get(['data', 'lastUpdate', 'errors', 'oaLoginError', 'zentaoLoginError', 'gitlabLoginError']);
 
     if (result.lastUpdate) {
       updateLastUpdateTime(result.lastUpdate);
     }
 
     if (result.data) {
-      renderData(result.data, result.oaLoginError);
+      renderData(result.data, result.oaLoginError, result.zentaoLoginError, result.gitlabLoginError);
     } else {
       showEmptyState();
     }
@@ -270,10 +316,10 @@ async function refreshData() {
     const response = await sendMessage({ action: 'refreshData' });
 
     if (response.success) {
-      // 刷新后重新从 storage 读取所有数据（包括 oaLoginError）
-      const result = await chrome.storage.local.get(['data', 'lastUpdate', 'oaLoginError']);
+      // 刷新后重新从 storage 读取所有数据（包括所有登录错误）
+      const result = await chrome.storage.local.get(['data', 'lastUpdate', 'oaLoginError', 'zentaoLoginError', 'gitlabLoginError']);
 
-      renderData(result.data, result.oaLoginError);
+      renderData(result.data, result.oaLoginError, result.zentaoLoginError, result.gitlabLoginError);
       updateLastUpdateTime(new Date().toISOString());
     } else {
       alert('刷新失败: ' + response.error);
@@ -289,8 +335,8 @@ async function refreshData() {
 /**
  * 渲染数据
  */
-function renderData(data, oaLoginError) {
-  console.log('renderData 被调用，oaLoginError:', oaLoginError);
+function renderData(data, oaLoginError, zentaoLoginError, gitlabLoginError) {
+  console.log('renderData 被调用，oaLoginError:', oaLoginError, 'zentaoLoginError:', zentaoLoginError, 'gitlabLoginError:', gitlabLoginError);
   let hasData = false;
 
   // 渲染 OA 数据
@@ -341,35 +387,109 @@ function renderData(data, oaLoginError) {
   }
 
   // 渲染禅道数据
-  if (currentConfig?.zentao?.enabled && data.zentao) {
+  if (currentConfig?.zentao?.enabled) {
     elements.zentaoSection.style.display = 'block';
 
-    if (data.zentao.mock) {
-      document.getElementById('zentaoTasks').textContent = '待实现';
-      document.getElementById('zentaoBugs').textContent = '待实现';
-      document.getElementById('zentaoStories').textContent = '待实现';
-    } else {
-      document.getElementById('zentaoTasks').textContent = data.zentao.tasks || 0;
-      document.getElementById('zentaoBugs').textContent = data.zentao.bugs || 0;
-      document.getElementById('zentaoStories').textContent = data.zentao.stories || 0;
-    }
+    // 检查是否需要登录
+    if (zentaoLoginError) {
+      console.log('显示禅道登录提示，登录 URL:', zentaoLoginError.loginUrl);
+      elements.zentaoLoginReminder.style.display = 'block';
+      elements.zentaoDataContent.style.display = 'none';
+      elements.zentaoLoginLink.href = zentaoLoginError.loginUrl || currentConfig.zentao.baseURL;
+      hasData = true;
+    } else if (data.zentao) {
+      elements.zentaoLoginReminder.style.display = 'none';
+      elements.zentaoDataContent.style.display = 'block';
 
-    hasData = true;
+      // 渲染禅道详细数据
+      renderZentaoData(data.zentao);
+
+      hasData = true;
+    }
   } else {
     elements.zentaoSection.style.display = 'none';
   }
 
   // 渲染 GitLab 数据
-  if (currentConfig?.gitlab?.enabled && data.gitlab) {
+  if (currentConfig?.gitlab?.enabled) {
     elements.gitlabSection.style.display = 'block';
 
-    if (data.gitlab.mock) {
-      document.getElementById('gitlabCommits').textContent = '待实现';
-    } else {
-      document.getElementById('gitlabCommits').textContent = data.gitlab.todayCommits || 0;
-    }
+    // 检查是否需要登录
+    if (gitlabLoginError) {
+      console.log('显示 GitLab 登录提示，登录 URL:', gitlabLoginError.loginUrl);
+      elements.gitlabLoginReminder.style.display = 'block';
+      elements.gitlabDataContent.style.display = 'none';
+      elements.gitlabLoginLink.href = gitlabLoginError.loginUrl || currentConfig.gitlab.baseURL;
+      hasData = true;
+    } else if (data.gitlab) {
+      elements.gitlabLoginReminder.style.display = 'none';
+      elements.gitlabDataContent.style.display = 'block';
 
-    hasData = true;
+      // 设置日期范围选择器
+      if (currentConfig.gitlab.dateRange) {
+        elements.gitlabDateRange.value = currentConfig.gitlab.dateRange;
+      }
+
+      // 根据日期范围更新标签文本
+      const dateRange = currentConfig.gitlab.dateRange || 'today';
+      const labelMap = {
+        today: '今日提交:',
+        week: '本周提交:',
+        month: '本月提交:'
+      };
+      elements.gitlabCommitsLabel.textContent = labelMap[dateRange] || '今日提交:';
+
+      if (data.gitlab.mock) {
+        document.getElementById('gitlabCommits').textContent = '待实现';
+      } else {
+        // 渲染提交次数
+        document.getElementById('gitlabCommits').textContent = data.gitlab.commits || 0;
+
+        // 渲染 MR 统计（仅显示合并数量）
+        if (data.gitlab.mergeRequests && data.gitlab.mergeRequests.merged > 0) {
+          document.getElementById('gitlabMrItem').style.display = 'flex';
+          document.getElementById('gitlabMR').textContent = data.gitlab.mergeRequests.merged;
+        } else {
+          document.getElementById('gitlabMrItem').style.display = 'none';
+        }
+
+        // 渲染项目分布
+        if (data.gitlab.projects && Object.keys(data.gitlab.projects).length > 0) {
+          document.getElementById('gitlabProjectsItem').style.display = 'flex';
+          const allProjects = Object.entries(data.gitlab.projects)
+            .sort((a, b) => b[1] - a[1]) // 按提交次数排序
+            .map(([name, count]) => `${name}(${count})`)
+            .join(', ');
+          document.getElementById('gitlabProjects').textContent = allProjects;
+        } else {
+          document.getElementById('gitlabProjectsItem').style.display = 'none';
+        }
+
+        // 更新 AI 工作总结按钮文本
+        const summaryBtnTextMap = {
+          today: '🤖 生成今日工作总结',
+          week: '🤖 生成本周工作总结',
+          month: '🤖 生成本月工作总结'
+        };
+        const summaryBtnText = document.getElementById('generateSummaryBtnText');
+        if (summaryBtnText) {
+          summaryBtnText.textContent = summaryBtnTextMap[dateRange] || '🤖 生成工作总结';
+        }
+
+        // 更新总结标题
+        const summaryResultTitle = document.querySelector('.summary-result h4');
+        if (summaryResultTitle) {
+          const titleMap = {
+            today: '📝 今日工作总结',
+            week: '📝 本周工作总结',
+            month: '📝 本月工作总结'
+          };
+          summaryResultTitle.textContent = titleMap[dateRange] || '📝 工作总结';
+        }
+      }
+
+      hasData = true;
+    }
   } else {
     elements.gitlabSection.style.display = 'none';
   }
@@ -593,7 +713,34 @@ async function onDishTagClick(tagElement) {
     // 1. 显示加载状态
     showDishSidebar(null, true);
 
-    // 2. 请求菜品详情
+    // 2. 先检查配置
+    console.log('[Popup] 检查 API 配置...');
+    const configCheck = await sendMessage({
+      action: 'checkApiConfig'
+    });
+
+    // 3. 如果缺少必需配置（AI API），显示配置引导
+    if (!configCheck.success) {
+      showDishSidebar({
+        dishName,
+        intro: '',
+        ingredients: [],
+        cookingMethods: [],
+        cookingSteps: [],
+        imageUrl: '',
+        configError: true,
+        errorMessage: configCheck.message
+      }, false);
+      return;
+    }
+
+    // 4. 如果有警告（SerpAPI 未配置），在 console 提示但继续
+    if (configCheck.warning) {
+      console.warn('[Popup]', configCheck.message);
+    }
+
+    // 5. 请求菜品详情
+    console.log('[Popup] 开始获取菜品详情...');
     const response = await sendMessage({
       action: 'getDishDetail',
       dishName,
@@ -601,7 +748,7 @@ async function onDishTagClick(tagElement) {
     });
 
     if (response.success) {
-      // 3. 显示详情
+      // 6. 显示详情
       showDishSidebar(response.data, false);
     } else {
       throw new Error(response.error || '获取失败');
@@ -661,9 +808,24 @@ function showDishSidebar(dishData, isLoading) {
         </div>
       </div>
     `;
+  } else if (dishData && dishData.configError) {
+    // 显示配置错误引导
+    sidebar.innerHTML = `
+      <div class="sidebar-header">
+        <h3>${dishData.dishName}</h3>
+        <button class="sidebar-close" id="close-dish-sidebar">×</button>
+      </div>
+      <div class="sidebar-content">
+        <div class="config-error-message">
+          <div class="config-error-icon">⚙️</div>
+          <div class="config-error-text">${dishData.errorMessage.replace(/\n/g, '<br>')}</div>
+          <button class="config-error-btn" id="goToSettings">前往设置</button>
+        </div>
+      </div>
+    `;
   } else if (dishData) {
     // 渲染实际数据
-    const hasImage = dishData.imageUrl && !dishData.error;
+    const hasImages = dishData.imageUrls && dishData.imageUrls.length > 0;
     const ingredientsHtml = dishData.ingredients.map(item =>
       `<span class="dish-tag ingredient-tag">${item}</span>`
     ).join('');
@@ -677,24 +839,50 @@ function showDishSidebar(dishData, isLoading) {
        </div>`
     ).join('');
 
+    // 生成轮播图 HTML
+    let carouselHtml = '';
+    if (hasImages) {
+      const carouselItemsHtml = dishData.imageUrls.map((url, index) => `
+        <div class="dish-carousel-item">
+          <img src="${url}" alt="${dishData.dishName} ${index + 1}" onerror="this.parentElement.style.display='none'">
+        </div>
+      `).join('');
+
+      const indicatorsHtml = dishData.imageUrls.map((_, index) => `
+        <span class="dish-carousel-indicator ${index === 0 ? 'active' : ''}" data-index="${index}"></span>
+      `).join('');
+
+      carouselHtml = `
+        <div class="dish-image-container">
+          <div class="dish-carousel" id="popupDishCarousel">
+            <div class="dish-carousel-inner" id="popupCarouselInner">
+              ${carouselItemsHtml}
+            </div>
+            ${dishData.imageUrls.length > 1 ? `
+              <button class="dish-carousel-control prev" id="popupCarouselPrev">‹</button>
+              <button class="dish-carousel-control next" id="popupCarouselNext">›</button>
+              <div class="dish-carousel-indicators" id="popupCarouselIndicators">
+                ${indicatorsHtml}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    } else {
+      carouselHtml = `
+        <div class="dish-image-container">
+          <div class="dish-image-placeholder">暂无图片</div>
+        </div>
+      `;
+    }
+
     sidebar.innerHTML = `
       <div class="sidebar-header">
         <h3>${dishData.dishName}</h3>
         <button class="sidebar-close" id="close-dish-sidebar">×</button>
       </div>
       <div class="sidebar-content">
-        ${hasImage ? `
-          <div class="dish-image-container">
-            <img src="${dishData.imageUrl}"
-                 alt="${dishData.dishName}"
-                 class="dish-image"
-                 onerror="this.parentElement.innerHTML='<div class=dish-image-placeholder>暂无图片</div>'">
-          </div>
-        ` : `
-          <div class="dish-image-container">
-            <div class="dish-image-placeholder">暂无图片</div>
-          </div>
-        `}
+        ${carouselHtml}
 
         <div class="dish-intro">
           <p>${dishData.intro}</p>
@@ -722,6 +910,11 @@ function showDishSidebar(dishData, isLoading) {
         ` : ''}
       </div>
     `;
+
+    // 初始化轮播图
+    if (hasImages && dishData.imageUrls.length > 1) {
+      initPopupCarousel();
+    }
   }
 
   // 绑定关闭事件
@@ -757,6 +950,20 @@ function bindSidebarCloseEvents() {
   const overlay = document.getElementById('dish-overlay');
   if (overlay) {
     overlay.onclick = closeDishSidebar;
+  }
+
+  // 前往设置按钮（配置错误时显示）
+  const goToSettingsBtn = document.getElementById('goToSettings');
+  if (goToSettingsBtn) {
+    goToSettingsBtn.onclick = () => {
+      // 切换到设置标签页
+      const settingsBtn = document.getElementById('tab-settings');
+      if (settingsBtn) {
+        settingsBtn.click();
+      }
+      // 关闭侧边栏
+      closeDishSidebar();
+    };
   }
 
   // ESC键关闭（只绑定一次）
@@ -812,6 +1019,28 @@ async function onOADateRangeChange() {
 }
 
 /**
+ * GitLab 日期范围切换
+ */
+async function onGitLabDateRangeChange() {
+  const dateRange = elements.gitlabDateRange.value;
+  console.log('GitLab 日期范围切换:', dateRange);
+
+  // 更新配置
+  if (currentConfig && currentConfig.gitlab) {
+    currentConfig.gitlab.dateRange = dateRange;
+
+    // 保存配置到存储
+    await sendMessage({
+      action: 'saveConfig',
+      systems: currentConfig
+    });
+
+    // 刷新数据
+    await refreshData();
+  }
+}
+
+/**
  * 发送消息到后台脚本
  */
 function sendMessage(message) {
@@ -823,6 +1052,328 @@ function sendMessage(message) {
         resolve(response);
       }
     });
+  });
+}
+
+// ===== 禅道相关函数 =====
+
+/**
+ * 展开/收起禅道列表
+ * @param {string} type - 类型: 'tasks' | 'bugs'
+ */
+function toggleZentaoList(type) {
+  console.log('[Popup] toggleZentaoList 被调用，type:', type);
+
+  const btnMap = {
+    tasks: elements.toggleTasksBtn,
+    bugs: elements.toggleBugsBtn
+  };
+
+  const listMap = {
+    tasks: elements.zentaoTasksList,
+    bugs: elements.zentaoBugsList
+  };
+
+  const btn = btnMap[type];
+  const list = listMap[type];
+
+  console.log('[Popup] btn:', btn);
+  console.log('[Popup] list:', list);
+
+  if (!btn || !list) return;
+
+  const isExpanded = list.classList.contains('expanded');
+  console.log('[Popup] 当前展开状态:', isExpanded);
+
+  if (isExpanded) {
+    // 收起
+    list.classList.remove('expanded');
+    btn.classList.remove('active');
+    btn.textContent = '展开 ▼';
+    console.log('[Popup] 已收起');
+  } else {
+    // 展开
+    list.classList.add('expanded');
+    list.style.display = 'block'; // 移除 inline style 的 display: none
+    btn.classList.add('active');
+    btn.textContent = '收起 ▲';
+    console.log('[Popup] 已展开，list.classList:', list.classList);
+  }
+}
+
+/**
+ * 渲染禅道数据
+ * @param {Object} zentaoData - 禅道数据
+ *
+ * 数据结构示例：
+ * {
+ *   tasks: [
+ *     {
+ *       id: 123,
+ *       name: "实现用户登录功能",
+ *       status: "doing",  // wait | doing | done
+ *       priority: 3,      // 1=最高, 2=高, 3=中, 4=低
+ *       assignedTo: "张三",
+ *       url: "http://zentao.com/task-view-123.html"
+ *     }
+ *   ],
+ *   bugs: [
+ *     {
+ *       id: 456,
+ *       title: "登录页面样式错乱",
+ *       status: "active",  // active | resolved | closed
+ *       severity: 2,       // 1-4
+ *       assignedTo: "李四",
+ *       url: "http://zentao.com/bug-view-456.html"
+ *     }
+ *   ],
+ *   stories: [
+ *     {
+ *       id: 789,
+ *       title: "用户个人中心需求",
+ *       status: "active",  // draft | active | closed
+ *       stage: "reviewing", // 评审中
+ *       assignedTo: "王五",
+ *       url: "http://zentao.com/story-view-789.html"
+ *     }
+ *   ]
+ * }
+ */
+function renderZentaoData(zentaoData) {
+  if (!zentaoData) return;
+
+  // 渲染任务
+  if (zentaoData.tasks) {
+    renderZentaoTasks(zentaoData.tasks);
+  }
+
+  // 渲染 Bug
+  if (zentaoData.bugs) {
+    renderZentaoBugs(zentaoData.bugs);
+  }
+}
+
+/**
+ * 渲染禅道任务列表
+ */
+function renderZentaoTasks(tasks) {
+  const count = tasks.length;
+  const countElem = document.getElementById('zentaoTasksCount');
+  const toggleBtn = elements.toggleTasksBtn;
+  const listElem = elements.zentaoTasksList;
+  const estimateElem = document.getElementById('zentaoTasksEstimate');
+  const estimateValueElem = document.getElementById('zentaoTasksEstimateValue');
+
+  console.log('[Popup] renderZentaoTasks 被调用，任务数量:', count);
+
+  if (countElem) {
+    countElem.textContent = count;
+  }
+
+  if (count === 0) {
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    if (estimateElem) estimateElem.style.display = 'none';
+    listElem.innerHTML = '<div class="zentao-empty">暂无待处理任务</div>';
+    return;
+  }
+
+  // 计算预计工时总和
+  const totalEstimate = tasks.reduce((sum, task) => sum + (task.estimate || 0), 0);
+  console.log('[Popup] 预计工时总和:', totalEstimate);
+
+  // 显示预计工时
+  if (estimateElem && estimateValueElem) {
+    estimateElem.style.display = 'flex';
+    estimateValueElem.textContent = `${totalEstimate.toFixed(1)} 小时`;
+  }
+
+  // 显示展开按钮
+  if (toggleBtn) toggleBtn.style.display = 'block';
+
+  // 渲染任务列表
+  let html = '';
+  tasks.forEach(task => {
+    // 状态映射：只区分完成和未完成
+    const statusInfo = task.status === '已完成'
+      ? { class: 'task-completed', text: '完成' }
+      : { class: 'task-pending', text: '未完成' };
+
+    html += `
+      <div class="zentao-item">
+        <div class="zentao-content">
+          <div class="zentao-title">
+            ${task.url ? `<a href="${task.url}" target="_blank">${task.name}</a>` : task.name}
+          </div>
+          <div class="zentao-meta">
+            <span class="zentao-status ${statusInfo.class}">${statusInfo.text}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  console.log('[Popup] 生成的任务 HTML 长度:', html.length);
+
+  listElem.innerHTML = html;
+  console.log('[Popup] innerHTML 已设置，listElem.children.length:', listElem.children.length);
+}
+
+/**
+ * 渲染禅道 Bug 列表
+ */
+function renderZentaoBugs(bugs) {
+  const count = bugs.length;
+  const countElem = document.getElementById('zentaoBugsCount');
+  const toggleBtn = elements.toggleBugsBtn;
+  const listElem = elements.zentaoBugsList;
+
+  console.log('[Popup] renderZentaoBugs 被调用，Bug 数量:', count);
+  console.log('[Popup] listElem:', listElem);
+
+  if (countElem) {
+    countElem.textContent = count;
+  }
+
+  if (count === 0) {
+    if (toggleBtn) toggleBtn.style.display = 'none';
+    listElem.innerHTML = '<div class="zentao-empty">暂无待修复 Bug</div>';
+    return;
+  }
+
+  // 显示展开按钮
+  if (toggleBtn) toggleBtn.style.display = 'block';
+
+  // 渲染 Bug 列表
+  let html = '';
+  bugs.forEach(bug => {
+    const statusMap = {
+      active: { class: 'bug-active', text: '待处理' },
+      resolved: { class: 'bug-resolved', text: '已解决' },
+      closed: { class: 'bug-closed', text: '已关闭' }
+    };
+    const statusInfo = statusMap[bug.status] || { class: '', text: bug.status };
+
+    html += `
+      <div class="zentao-item">
+        <div class="zentao-content">
+          <div class="zentao-title">
+            ${bug.url ? `<a href="${bug.url}" target="_blank">${bug.title}</a>` : bug.title}
+          </div>
+          <div class="zentao-meta">
+            <span class="zentao-status ${statusInfo.class}">${statusInfo.text}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  console.log('[Popup] 生成的 HTML 长度:', html.length);
+  console.log('[Popup] HTML 前500字符:', html.substring(0, 500));
+
+  listElem.innerHTML = html;
+  console.log('[Popup] innerHTML 已设置，listElem.children.length:', listElem.children.length);
+}
+
+/**
+ * 生成 Bug AI 总结
+ */
+async function generateBugSummary() {
+  console.log('[Popup] 开始生成 Bug 总结...');
+
+  // 隐藏之前的结果和错误
+  elements.bugSummaryResult.style.display = 'none';
+  elements.bugSummaryError.style.display = 'none';
+
+  // 显示加载状态
+  elements.bugSummaryLoading.style.display = 'block';
+  elements.generateBugSummaryBtn.disabled = true;
+
+  try {
+    const response = await sendMessage({ action: 'generateBugSummary' });
+
+    if (response.success) {
+      // 显示总结结果
+      elements.bugSummaryContent.textContent = response.summary;
+      elements.bugSummaryResult.style.display = 'block';
+      console.log('[Popup] Bug 总结生成成功:', response.summary);
+    } else {
+      // 显示错误
+      elements.bugSummaryError.textContent = response.error || '生成失败';
+      elements.bugSummaryError.style.display = 'block';
+    }
+  } catch (error) {
+    console.error('[Popup] 生成 Bug 总结失败:', error);
+    elements.bugSummaryError.textContent = '生成失败: ' + error.message;
+    elements.bugSummaryError.style.display = 'block';
+  } finally {
+    // 隐藏加载状态
+    elements.bugSummaryLoading.style.display = 'none';
+    elements.generateBugSummaryBtn.disabled = false;
+  }
+}
+
+// ===== 轮播图功能（Popup 侧边栏） =====
+let popupCurrentSlide = 0;
+let popupTotalSlides = 0;
+
+function initPopupCarousel() {
+  const carousel = document.getElementById('popupDishCarousel');
+  if (!carousel) return;
+
+  const inner = document.getElementById('popupCarouselInner');
+  const prevBtn = document.getElementById('popupCarouselPrev');
+  const nextBtn = document.getElementById('popupCarouselNext');
+  const indicators = document.querySelectorAll('#popupCarouselIndicators .dish-carousel-indicator');
+
+  if (!inner) return;
+
+  popupTotalSlides = inner.children.length;
+  popupCurrentSlide = 0;
+
+  // 绑定上一张按钮
+  if (prevBtn) {
+    prevBtn.addEventListener('click', () => {
+      popupCurrentSlide = (popupCurrentSlide - 1 + popupTotalSlides) % popupTotalSlides;
+      updatePopupCarousel();
+    });
+  }
+
+  // 绑定下一张按钮
+  if (nextBtn) {
+    nextBtn.addEventListener('click', () => {
+      popupCurrentSlide = (popupCurrentSlide + 1) % popupTotalSlides;
+      updatePopupCarousel();
+    });
+  }
+
+  // 绑定指示器点击
+  indicators.forEach((indicator, index) => {
+    indicator.addEventListener('click', () => {
+      popupCurrentSlide = index;
+      updatePopupCarousel();
+    });
+  });
+
+  // 初始化显示
+  updatePopupCarousel();
+}
+
+function updatePopupCarousel() {
+  const inner = document.getElementById('popupCarouselInner');
+  const indicators = document.querySelectorAll('#popupCarouselIndicators .dish-carousel-indicator');
+
+  if (!inner) return;
+
+  // 更新轮播位置
+  inner.style.transform = `translateX(-${popupCurrentSlide * 100}%)`;
+
+  // 更新指示器状态
+  indicators.forEach((indicator, index) => {
+    if (index === popupCurrentSlide) {
+      indicator.classList.add('active');
+    } else {
+      indicator.classList.remove('active');
+    }
   });
 }
 

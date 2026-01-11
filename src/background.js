@@ -20,7 +20,8 @@ const SYSTEMS = {
   gitlab: {
     name: 'GitLab',
     baseURL: 'http://gitlab.lets.com:8800',
-    enabled: true
+    enabled: true,
+    dateRange: 'today'  // 默认查询今天：today, week, month
   },
   zhipu: {
     name: '智谱AI',
@@ -79,8 +80,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('收到消息:', request);
 
   if (request.action === 'refreshData') {
-    refreshAllData().then(data => {
-      sendResponse({ success: true, data });
+    refreshAllData().then(async (data) => {
+      // 同时获取登录错误信息
+      const storage = await chrome.storage.local.get(['gitlabLoginError', 'oaLoginError', 'zentaoLoginError']);
+      sendResponse({
+        success: true,
+        data,
+        gitlabLoginError: storage.gitlabLoginError,
+        oaLoginError: storage.oaLoginError,
+        zentaoLoginError: storage.zentaoLoginError
+      });
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
     });
@@ -110,6 +119,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // 异步响应
   }
 
+  if (request.action === 'generateBugSummary') {
+    generateBugAISummary().then(summary => {
+      sendResponse({ success: true, summary });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // 异步响应
+  }
+
+  if (request.action === 'checkApiConfig') {
+    checkApiConfig().then(result => {
+      sendResponse(result);
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // 异步响应
+  }
+
   if (request.action === 'getDishDetail') {
     getDishDetail(request.dishName, request.mealType).then(data => {
       sendResponse({ success: true, data });
@@ -131,6 +158,8 @@ async function refreshAllData() {
     const results = {};
     const errors = [];
     let oaLoginError = null;
+    let zentaoLoginError = null;
+    let gitlabLoginError = null;
 
     // 并行获取各系统数据
     const promises = Object.entries(systems).map(async ([key, system]) => {
@@ -152,7 +181,24 @@ async function refreshAllData() {
             loginUrl: error.loginUrl
           };
           console.log('捕获到 OA 登录错误，保存到 storage:', oaLoginError);
-        } else {
+        }
+        // 特殊处理禅道登录错误
+        else if (key === 'zentao' && error.needLogin) {
+          zentaoLoginError = {
+            message: error.message,
+            loginUrl: error.loginUrl
+          };
+          console.log('捕获到禅道登录错误，保存到 storage:', zentaoLoginError);
+        }
+        // 特殊处理 GitLab 登录错误
+        else if (key === 'gitlab' && error.needLogin) {
+          gitlabLoginError = {
+            message: error.message,
+            loginUrl: error.loginUrl
+          };
+          console.log('捕获到 GitLab 登录错误，保存到 storage:', gitlabLoginError);
+        }
+        else {
           errors.push({
             system: system.name,
             error: error.message
@@ -170,7 +216,9 @@ async function refreshAllData() {
       data: results,
       lastUpdate: new Date().toISOString(),
       errors: errors,
-      oaLoginError: oaLoginError
+      oaLoginError: oaLoginError,
+      zentaoLoginError: zentaoLoginError,
+      gitlabLoginError: gitlabLoginError
     });
 
     // 更新徽章
@@ -209,8 +257,168 @@ async function fetchSystemData(systemKey, systemConfig) {
  */
 async function fetchZentaoData(config) {
   try {
-    const url = `${config.baseURL}/index.php?m=block&f=printBlock&id=753&module=my`;
-    console.log('请求禅道 URL:', url);
+    console.log('[Zentao] 开始获取禅道数据...');
+
+    // 并行获取两种类型的数据
+    const [resolvedBugs, activeBugs, tasks] = await Promise.all([
+      fetchZentaoResolvedBugs(config),  // 已解决的 Bug
+      fetchZentaoActiveBugs(config),     // 未解决的 Bug
+      fetchZentaoTasks(config)
+    ]);
+
+    // 合并两种 Bug
+    const bugs = [...(activeBugs || []), ...(resolvedBugs || [])];
+
+    const data = {
+      bugs: bugs,
+      tasks: tasks || []
+    };
+
+    console.log('[Zentao] 禅道数据获取成功:', {
+      bugs: data.bugs.length,
+      tasks: data.tasks.length
+    });
+
+    return data;
+
+  } catch (error) {
+    console.error('[Zentao] 获取禅道数据失败:', error);
+    throw error;
+  }
+}
+
+/**
+ * 获取禅道 Bug 列表（已解决）
+ */
+async function fetchZentaoResolvedBugs(config) {
+  try {
+    // 先设置 cookie，控制每页显示 100 条
+    const cookieUrl = new URL(config.baseURL);
+    await chrome.cookies.set({
+      url: config.baseURL,
+      name: 'pagerMyBug',
+      value: '100',
+      domain: cookieUrl.hostname,
+      path: '/'
+    });
+    console.log('[Zentao] 已设置 cookie: pagerMyBug=100');
+
+    // 第一步：提交搜索条件
+    const buildQueryUrl = `${config.baseURL}/index.php?m=search&f=buildQuery`;
+    console.log('[Zentao] 提交搜索条件（已解决）:', buildQueryUrl);
+
+    const formData = new URLSearchParams({
+      // 所有字段（包括空字段）
+      'fieldtitle': '',
+      'fieldkeywords': '',
+      'fieldsteps': '',
+      'fieldassignedTo': '',
+      'fieldresolvedBy': '',
+      'fieldstatus': '',
+      'fieldconfirmed': '',
+      'fieldstory': '',
+      'fieldproject': '',
+      'fieldproduct': '',
+      'fieldbranch': '0',
+      'fieldplan': '',
+      'fieldmodule': 'ZERO',
+      'fieldexecution': '1012',
+      'fieldseverity': '0',
+      'fieldpri': '0',
+      'fieldtype': '',
+      'fieldos': '',
+      'fieldbrowser': '',
+      'fieldresolution': '',
+      'fieldactivatedCount': '',
+      'fieldtoTask': '',
+      'fieldtoStory': '',
+      'fieldopenedBy': '',
+      'fieldclosedBy': '',
+      'fieldlastEditedBy': '',
+      'fieldmailto': '',
+      'fieldopenedBuild': '',
+      'fieldresolvedBuild': '',
+      'fieldopenedDate': '',
+      'fieldassignedDate': '',
+      'fieldresolvedDate': '',
+      'fieldclosedDate': '',
+      'fieldlastEditedDate': '',
+      'fielddeadline': '',
+      'fieldactivatedDate': '',
+      'fieldstage': '',
+      'requirementPhase': '',
+      'fieldid': '',
+
+      // 搜索条件1：解决日期为上个月
+      'andOr1': 'AND',
+      'field1': 'resolvedDate',
+      'operator1': 'between',
+      'value1': '$lastMonth',
+
+      // 搜索条件2：模块
+      'andOr2': 'and',
+      'field2': 'module',
+      'operator2': 'belong',
+      'value2': 'ZERO',
+
+      // 搜索条件3：关键词
+      'andOr3': 'and',
+      'field3': 'keywords',
+      'operator3': 'include',
+      'value3': '',
+
+      'groupAndOr': 'and',
+
+      // 搜索条件4：步骤
+      'andOr4': 'AND',
+      'field4': 'steps',
+      'operator4': 'include',
+      'value4': '',
+
+      // 搜索条件5：指派给
+      'andOr5': 'and',
+      'field5': 'assignedTo',
+      'operator5': '=',
+      'value5': '',
+
+      // 搜索条件6：由谁解决
+      'andOr6': 'and',
+      'field6': 'resolvedBy',
+      'operator6': '=',
+      'value6': '',
+
+      // 其他必需参数
+      'module': 'contributeBug',
+      'actionURL': '/index.php?m=my&f=contribute&mode=bug&browseType=bySearch&queryID=myQueryID',
+      'groupItems': '3',
+      'formType': 'lite'
+    });
+
+    console.log('[Zentao] POST 请求体:', formData.toString());
+    console.log('[Zentao] POST 请求体大小:', formData.toString().length, '字节');
+
+    const buildQueryResponse = await fetch(buildQueryUrl, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json, text/html'
+      },
+      body: formData
+    });
+
+    if (!buildQueryResponse.ok) {
+      throw new Error(`构建查询失败: ${buildQueryResponse.status}`);
+    }
+
+    const buildQueryResponseText = await buildQueryResponse.text();
+    console.log('[Zentao] 搜索条件提交响应:', buildQueryResponseText.substring(0, 500));
+    console.log('[Zentao] 响应状态码:', buildQueryResponse.status);
+    console.log('[Zentao] 响应头 Content-Type:', buildQueryResponse.headers.get('Content-Type'));
+
+    // 第二步：获取 Bug 列表页面
+    const url = `${config.baseURL}/index.php?m=my&f=contribute&mode=bug&browseType=bySearch&queryID=myQueryID`;
+    console.log('[Zentao] 请求已解决 Bug 列表:', url);
 
     const response = await fetch(url, {
       credentials: 'include',
@@ -224,62 +432,449 @@ async function fetchZentaoData(config) {
     }
 
     const html = await response.text();
-    console.log('禅道返回数据长度:', html.length);
 
-    // 解析 HTML 提取数据
-    const data = parseZentaoHTML(html);
-    return data;
+    // 检测登录状态
+    if (html.includes('self.location') && html.includes('m=user&f=login')) {
+      console.log('[Zentao] 检测到登录重定向');
+      const loginError = new Error('请重新登录禅道系统');
+      loginError.needLogin = true;
+      loginError.loginUrl = `${config.baseURL}/index.php?m=user&f=login`;
+      throw loginError;
+    }
+
+    // 解析 Bug 列表，传入 status='resolved'
+    const bugs = parseZentaoBugs(html, config.baseURL, 'resolved');
+    console.log(`[Zentao] 解析到 ${bugs.length} 个已解决 Bug`);
+
+    return bugs;
 
   } catch (error) {
-    console.error('获取禅道数据失败:', error);
-    throw error;
+    console.error('[Zentao] 获取已解决 Bug 列表失败:', error);
+    if (error.needLogin) throw error;
+    return [];
   }
 }
 
 /**
- * 解析禅道 HTML 数据
+ * 获取禅道 Bug 列表（未解决/待处理）
  */
-function parseZentaoHTML(html) {
-  const data = {
-    tasks: 0,
-    bugs: 0,
-    stories: 0,
-    tasksList: [],
-    bugsList: [],
-    storiesList: []
-  };
-
+async function fetchZentaoActiveBugs(config) {
   try {
-    // 移除所有HTML标签和多余空格，便于匹配
-    const cleanText = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
-    console.log('清理后的文本片段:', cleanText.substring(0, 500));
+    // 先设置 cookie，控制每页显示 100 条
+    const cookieUrl = new URL(config.baseURL);
+    await chrome.cookies.set({
+      url: config.baseURL,
+      name: 'pagerMyBug',
+      value: '100',
+      domain: cookieUrl.hostname,
+      path: '/'
+    });
+    console.log('[Zentao] 已设置 cookie: pagerMyBug=100');
 
-    // 使用正则表达式提取数据
-    // 任务数量 - 匹配 "我的任务" 后面的数字
-    const taskMatch = cleanText.match(/我的任务\s+(\d+)/);
-    if (taskMatch) {
-      data.tasks = parseInt(taskMatch[1]) || 0;
+    const url = `${config.baseURL}/index.php?m=my&f=work&mode=bug`;
+    console.log('[Zentao] 请求未解决 Bug 列表:', url);
+
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // Bug 数量 - 匹配 "我的BUG" 后面的数字
-    const bugMatch = cleanText.match(/我的BUG\s+(\d+)/);
-    if (bugMatch) {
-      data.bugs = parseInt(bugMatch[1]) || 0;
+    const html = await response.text();
+
+    // 检测登录状态
+    if (html.includes('self.location') && html.includes('m=user&f=login')) {
+      console.log('[Zentao] 检测到登录重定向');
+      const loginError = new Error('请重新登录禅道系统');
+      loginError.needLogin = true;
+      loginError.loginUrl = `${config.baseURL}/index.php?m=user&f=login`;
+      throw loginError;
     }
 
-    // 需求数量 - 匹配 "我的研发需求" 后面的数字
-    const storyMatch = cleanText.match(/我的研发需求\s+(\d+)/);
-    if (storyMatch) {
-      data.stories = parseInt(storyMatch[1]) || 0;
-    }
+    // 解析 Bug 列表，传入 status='active'
+    const bugs = parseZentaoBugs(html, config.baseURL, 'active');
+    console.log(`[Zentao] 解析到 ${bugs.length} 个未解决 Bug`);
 
-    console.log('解析禅道数据:', data);
+    return bugs;
 
   } catch (error) {
-    console.error('解析禅道数据失败:', error);
+    console.error('[Zentao] 获取未解决 Bug 列表失败:', error);
+    if (error.needLogin) throw error;
+    return [];
+  }
+}
+
+/**
+ * 解析禅道 Bug HTML（使用正则表达式，适用于 Service Worker）
+ * @param {string} html - HTML内容
+ * @param {string} baseURL - 基础URL
+ * @param {string} status - Bug状态：'resolved'(已解决) 或 'active'(未解决)
+ */
+function parseZentaoBugs(html, baseURL, status = 'resolved') {
+  const bugs = [];
+
+  try {
+    console.log('[Zentao] HTML 长度:', html.length);
+    console.log('[Zentao] HTML 前500字符:', html.substring(0, 500));
+
+    // 查找 id='bugList' 或 id="bugList" 的 table（兼容单双引号）
+    const tableRegex = /<table[^>]*id=['"]bugList['"][^>]*>([\s\S]*?)<\/table>/i;
+    const tableMatch = html.match(tableRegex);
+
+    if (!tableMatch) {
+      console.error('[Zentao] 未找到 id="bugList" 的表格');
+      console.log('[Zentao] 检查 HTML 是否包含 bugList:', html.includes('bugList'));
+      return bugs;
+    }
+
+    console.log('[Zentao] 成功找到 bugList 表格，长度:', tableMatch[0].length);
+
+    // 提取 tbody 内容
+    const tbodyRegex = /<tbody[^>]*>([\s\S]*?)<\/tbody>/i;
+    const tbodyMatch = tableMatch[1].match(tbodyRegex);
+
+    if (!tbodyMatch) {
+      console.error('[Zentao] 未找到 tbody 标签');
+      return bugs;
+    }
+
+    const tbodyContent = tbodyMatch[1];
+    console.log('[Zentao] 成功提取 tbody，长度:', tbodyContent.length);
+
+    // 提取所有的 tr 标签
+    const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    const trMatches = tbodyContent.matchAll(trRegex);
+
+    let rowIndex = 0;
+    for (const trMatch of trMatches) {
+      try {
+        const rowContent = trMatch[1];
+
+        // 调试：输出前2行的HTML
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行 HTML (前500字符):`, rowContent.substring(0, 500));
+        }
+
+        // 提取所有的 td 列
+        const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+        const tdMatches = [...rowContent.matchAll(tdRegex)];
+
+        if (tdMatches.length < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：td 列数不足，跳过`);
+          rowIndex++;
+          continue;
+        }
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：找到 ${tdMatches.length} 列`);
+        }
+
+        // 第一列：提取 Bug ID
+        const firstCol = tdMatches[0][1];
+        const idMatch = firstCol.match(/value=['"](\d+)['"]/);
+        if (!idMatch) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：未找到 Bug ID，跳过`);
+          rowIndex++;
+          continue;
+        }
+        const id = parseInt(idMatch[1]);
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：Bug ID = ${id}`);
+        }
+
+        // 第二列：提取标题和链接
+        const secondCol = tdMatches[1][1];
+        const linkMatch = secondCol.match(/<a[^>]*href=['"]([^'"]*)['"'][^>]*title=['"]([^'"]*)['"'][^>]*>([^<]*)<\/a>/i);
+
+        let title = '';
+        let href = '';
+
+        if (linkMatch) {
+          href = linkMatch[1];
+          title = linkMatch[2] || linkMatch[3].trim();
+        }
+
+        // 如果 title 仍为空，尝试从链接文本提取
+        if (!title && linkMatch) {
+          title = linkMatch[3].trim();
+        }
+
+        const url = href ? `${baseURL}${href}` : '';
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：标题 = "${title.substring(0, 50)}..."`);
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：URL = ${url}`);
+        }
+
+        // 倒数第二列：提取状态/方案
+        const secondLastCol = tdMatches[tdMatches.length - 2][1];
+        const resolution = secondLastCol.replace(/<[^>]*>/g, '').trim();
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：方案 = "${resolution}"`);
+        }
+
+        // 提取其他可选字段
+        // 严重程度（第3列）
+        let severity = 3;
+        let severityText = '';
+        if (tdMatches.length > 2) {
+          const severityCol = tdMatches[2][1];
+          const severityMatch = severityCol.match(/data-severity=['"](\d+)['"]/i);
+          const severityTitleMatch = severityCol.match(/title=['"]([^'"]*)['"]/i);
+          if (severityMatch) severity = parseInt(severityMatch[1]);
+          if (severityTitleMatch) severityText = severityTitleMatch[1];
+        }
+
+        // 优先级（第4列）
+        let priority = '正常';
+        if (tdMatches.length > 3) {
+          const priCol = tdMatches[3][1];
+          const priMatch = priCol.match(/title=['"]([^'"]*)['"]/i);
+          if (priMatch) priority = priMatch[1];
+        }
+
+        // 指派给（倒数第3列）
+        let assignedTo = '';
+        if (tdMatches.length > 2) {
+          const assignedCol = tdMatches[tdMatches.length - 3][1];
+          const assignedMatch = assignedCol.match(/title=['"]([^'"]*)['"]/i);
+          if (assignedMatch) assignedTo = assignedMatch[1];
+        }
+
+        if (id && title) {
+          bugs.push({
+            id,
+            title,
+            status: status,  // 使用参数传入的状态
+            severity,
+            severityText,
+            priority,
+            assignedTo,
+            resolution,
+            url
+          });
+
+          if (rowIndex < 3) {
+            console.log(`[Zentao] ✓ Bug #${id}: ${title.substring(0, 30)}...`);
+          }
+        } else {
+          console.log(`[Zentao] ✗ 第 ${rowIndex + 1} 行跳过 - ID:${id}, 标题:"${title.substring(0, 20)}"`);
+        }
+
+        rowIndex++;
+      } catch (error) {
+        console.error(`[Zentao] 解析第 ${rowIndex + 1} 行失败:`, error);
+        rowIndex++;
+      }
+    }
+
+  } catch (error) {
+    console.error('[Zentao] 解析 Bug HTML 失败:', error);
   }
 
-  return data;
+  console.log(`[Zentao] 最终解析结果: ${bugs.length} 个 Bug`);
+  return bugs;
+}
+
+/**
+ * 获取禅道任务列表（待处理）
+ */
+async function fetchZentaoTasks(config) {
+  try {
+    // 设置 cookie，控制每页显示 100 条
+    const cookieUrl = new URL(config.baseURL);
+    await chrome.cookies.set({
+      url: config.baseURL,
+      name: 'pagerTask',
+      value: '100',
+      domain: cookieUrl.hostname,
+      path: '/'
+    });
+    console.log('[Zentao] 已设置 cookie: pagerTask=100');
+
+    const url = `${config.baseURL}/index.php?m=my&f=work&mode=task`;
+    console.log('[Zentao] 请求任务列表:', url);
+
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const html = await response.text();
+
+    // 检测登录状态
+    if (html.includes('self.location') && html.includes('m=user&f=login')) {
+      console.log('[Zentao] 检测到登录重定向');
+      const loginError = new Error('请重新登录禅道系统');
+      loginError.needLogin = true;
+      loginError.loginUrl = `${config.baseURL}/index.php?m=user&f=login`;
+      throw loginError;
+    }
+
+    // 解析任务列表
+    const tasks = parseZentaoTasks(html, config.baseURL);
+    console.log(`[Zentao] 解析到 ${tasks.length} 个任务`);
+
+    return tasks;
+
+  } catch (error) {
+    console.error('[Zentao] 获取任务列表失败:', error);
+    if (error.needLogin) throw error;
+    return [];
+  }
+}
+
+/**
+ * 解析禅道任务 HTML
+ * @param {string} html - HTML内容
+ * @param {string} baseURL - 基础URL
+ */
+function parseZentaoTasks(html, baseURL) {
+  const tasks = [];
+
+  try {
+    console.log('[Zentao] 开始解析任务，HTML 长度:', html.length);
+
+    // 查找 id='taskTable' 的 table
+    const tableRegex = /<table[^>]*id=['"]taskTable['"][^>]*>([\s\S]*?)<\/table>/i;
+    const tableMatch = html.match(tableRegex);
+
+    if (!tableMatch) {
+      console.error('[Zentao] 未找到 id="taskTable" 的表格');
+      return tasks;
+    }
+
+    console.log('[Zentao] 成功找到 taskTable 表格');
+
+    // 提取 tbody 内容
+    const tbodyRegex = /<tbody[^>]*>([\s\S]*?)<\/tbody>/i;
+    const tbodyMatch = tableMatch[1].match(tbodyRegex);
+
+    if (!tbodyMatch) {
+      console.error('[Zentao] 未找到 tbody 标签');
+      return tasks;
+    }
+
+    const tbodyContent = tbodyMatch[1];
+    console.log('[Zentao] 成功提取 tbody，长度:', tbodyContent.length);
+
+    // 提取所有的 tr 标签
+    const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    const trMatches = tbodyContent.matchAll(trRegex);
+
+    let rowIndex = 0;
+    for (const trMatch of trMatches) {
+      try {
+        const rowContent = trMatch[1];
+
+        // 提取所有的 td 列
+        const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+        const tdMatches = [...rowContent.matchAll(tdRegex)];
+
+        if (tdMatches.length < 4) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：td 列数不足，跳过`);
+          rowIndex++;
+          continue;
+        }
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：找到 ${tdMatches.length} 列`);
+        }
+
+        // 第一列：提取任务 ID
+        const firstCol = tdMatches[0][1];
+        const idMatch = firstCol.match(/value=['"](\d+)['"]/);
+        if (!idMatch) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：未找到任务 ID，跳过`);
+          rowIndex++;
+          continue;
+        }
+        const id = parseInt(idMatch[1]);
+
+        // 第二列（c-name）：提取任务名称和链接
+        const secondCol = tdMatches[1][1];
+        const linkMatch = secondCol.match(/<a[^>]*href=['"]([^'"]*)['"'][^>]*>([^<]*)<\/a>/i);
+
+        let name = '';
+        let href = '';
+
+        if (linkMatch) {
+          href = linkMatch[1];
+          name = linkMatch[2].trim();
+        }
+
+        const url = href ? `${baseURL}${href}` : '';
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：任务名 = "${name}"`);
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：URL = ${url}`);
+        }
+
+        // 第四列（c-status）：提取状态
+        const fourthCol = tdMatches[3][1];
+        const statusMatch = fourthCol.match(/class=['"]status-[^'"]*['"][^>]*>([^<]*)</i);
+        const status = statusMatch ? statusMatch[1].trim() : '';
+
+        if (rowIndex < 2) {
+          console.log(`[Zentao] 第 ${rowIndex + 1} 行：状态 = "${status}"`);
+        }
+
+        // 倒数第6列：提取预计工时
+        let estimate = 0;
+        if (tdMatches.length >= 6) {
+          const estimateCol = tdMatches[tdMatches.length - 6][1];
+          // 移除HTML标签，提取数字
+          const estimateText = estimateCol.replace(/<[^>]*>/g, '').trim();
+          const estimateNum = parseFloat(estimateText);
+          if (!isNaN(estimateNum)) {
+            estimate = estimateNum;
+          }
+
+          if (rowIndex < 2) {
+            console.log(`[Zentao] 第 ${rowIndex + 1} 行：预计工时 = ${estimate}`);
+          }
+        }
+
+        if (id && name) {
+          tasks.push({
+            id,
+            name,
+            status,
+            estimate,
+            url
+          });
+
+          if (rowIndex < 3) {
+            console.log(`[Zentao] ✓ 任务 #${id}: ${name.substring(0, 30)}...`);
+          }
+        }
+
+        rowIndex++;
+      } catch (error) {
+        console.error(`[Zentao] 解析第 ${rowIndex + 1} 行失败:`, error);
+        rowIndex++;
+      }
+    }
+
+  } catch (error) {
+    console.error('[Zentao] 解析任务 HTML 失败:', error);
+  }
+
+  console.log(`[Zentao] 最终解析结果: ${tasks.length} 个任务`);
+  return tasks;
 }
 
 /**
@@ -707,8 +1302,26 @@ async function fetchGitLabData(config) {
   try {
     // 固定用户名
     const username = 'jinglihao';
-    const url = `${config.baseURL}/users/${username}/activity?limit=15`;
-    console.log('请求 GitLab URL:', url);
+
+    // 根据日期范围设置不同的 limit
+    const dateRange = config.dateRange || 'today';
+    let limit;
+    switch (dateRange) {
+      case 'today':
+        limit = 18;   // 今日 18 条
+        break;
+      case 'week':
+        limit = 50;   // 本周 50 条
+        break;
+      case 'month':
+        limit = 120;  // 本月 120 条
+        break;
+      default:
+        limit = 18;
+    }
+
+    const url = `${config.baseURL}/users/${username}/activity?limit=${limit}`;
+    console.log('请求 GitLab URL:', url, '日期范围:', dateRange);
 
     const response = await fetch(url, {
       credentials: 'include',
@@ -717,6 +1330,25 @@ async function fetchGitLabData(config) {
       }
     });
 
+    // 检测是否被重定向到登录页面
+    // GitLab 未登录时会 302 重定向到 /users/sign_in
+    if (response.redirected && response.url.includes('sign_in')) {
+      console.log('检测到 GitLab 登录重定向，redirected:', response.redirected, 'url:', response.url);
+      const loginError = new Error('请重新登录 GitLab 系统');
+      loginError.needLogin = true;
+      loginError.loginUrl = `${config.baseURL}/users/sign_in`;
+      throw loginError;
+    }
+
+    // 检查状态码（未登录可能返回 401/403/404）
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      console.log('检测到 GitLab 认证失败，状态码:', response.status);
+      const loginError = new Error('请重新登录 GitLab 系统');
+      loginError.needLogin = true;
+      loginError.loginUrl = `${config.baseURL}/users/sign_in`;
+      throw loginError;
+    }
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -724,8 +1356,8 @@ async function fetchGitLabData(config) {
     const json = await response.json();
     console.log('GitLab 返回数据，count:', json.count);
 
-    // 解析 HTML 提取数据
-    const data = parseGitLabHTML(json.html);
+    // 解析 HTML 提取数据，传入日期范围
+    const data = parseGitLabHTML(json.html, dateRange);
     return data;
 
   } catch (error) {
@@ -736,50 +1368,120 @@ async function fetchGitLabData(config) {
 
 /**
  * 解析 GitLab HTML 数据
+ * @param {string} html - HTML内容
+ * @param {string} dateRange - 日期范围：today, week, month
  */
-function parseGitLabHTML(html) {
+function parseGitLabHTML(html, dateRange = 'today') {
   const data = {
-    todayCommits: 0,
-    todayCommitMessages: []  // 保存今日提交消息
+    commits: 0,
+    commitMessages: [],  // 保存提交消息
+    dateRange: dateRange,
+    // MR 和项目统计（待验证）
+    mergeRequests: {
+      created: 0,
+      merged: 0,
+      approved: 0
+    },
+    projects: {}  // 项目分布 { projectName: count }
   };
 
   try {
-    // 获取今天的日期字符串
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
-    console.log('今天日期:', todayStr);
+    // 计算日期范围
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let startDate;
 
-    // 提取所有包含 event-item 的 li 标签（完整的 li，包括嵌套的 li）
+    switch (dateRange) {
+      case 'today':
+        startDate = today;
+        break;
+      case 'week':
+        const dayOfWeek = now.getDay();
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() + diff);
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      default:
+        startDate = today;
+    }
+
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const todayStr = now.toISOString().split('T')[0];
+    console.log('日期范围:', dateRange, '起始日期:', startDateStr, '结束日期:', todayStr);
+
+    // 提取所有包含 event-item 的 li 标签
     const eventItemRegex = /<li class="event-item[^"]*"[^>]*>([\s\S]*?)(?=<li class="event-item|$)/g;
     const eventMatches = html.matchAll(eventItemRegex);
+
+    // 调试：记录不同类型的图标
+    let iconDebug = new Set();
 
     for (const match of eventMatches) {
       const eventContent = match[1];
 
-      // 检查是否包含 "pushed to branch" 或 "pushed new"
-      if (eventContent.includes('pushed to branch') || eventContent.includes('pushed new')) {
-        // 提取时间信息
-        const timeMatch = eventContent.match(/<time[^>]*datetime="([^"]+)"/i);
+      // 提取时间信息
+      const timeMatch = eventContent.match(/<time[^>]*datetime="([^"]+)"/i);
+      if (!timeMatch) continue;
 
-        if (timeMatch) {
-          const datetime = timeMatch[1];
-          const activityDate = datetime.split('T')[0]; // 提取日期部分
+      const datetime = timeMatch[1];
+      const activityDate = datetime.split('T')[0];
 
-          console.log('找到推送活动，时间:', datetime, '日期:', activityDate);
+      // 判断是否在日期范围内
+      if (activityDate < startDateStr || activityDate > todayStr) continue;
 
-          // 判断是否是今天
-          if (activityDate === todayStr) {
-            data.todayCommits++;
+      // 通过 SVG data-testid 判断操作类型
+      const iconMatch = eventContent.match(/data-testid="([^"]+)-icon"/);
+      const iconType = iconMatch ? iconMatch[1] : null;
 
-            // 提取提交消息
-            const commitMessages = extractCommitMessages(eventContent);
-            data.todayCommitMessages.push(...commitMessages);
-          }
+      // 调试：记录图标类型
+      if (iconType) {
+        iconDebug.add(iconType);
+      }
+
+      // === 处理提交事件 (commit-icon) ===
+      if (iconType === 'commit') {
+        data.commits++;
+
+        // 提取提交消息
+        const commitMessages = extractCommitMessages(eventContent);
+        data.commitMessages.push(...commitMessages);
+
+        // 提取项目名称（仅在提交事件中统计项目）
+        const projectName = extractProjectNameFromAt(eventContent);
+        if (projectName) {
+          data.projects[projectName] = (data.projects[projectName] || 0) + 1;
+        }
+      }
+
+      // === 处理 Merge Request 事件 (fork-icon 表示合并) ===
+      if (iconType === 'fork') {
+        // fork-icon 通常表示 MR 相关操作
+        if (eventContent.includes('accepted') || eventContent.includes('merged')) {
+          data.mergeRequests.merged++;
+        }
+      }
+
+      // === 处理其他 MR 事件 ===
+      if (eventContent.includes('merge request')) {
+        if (eventContent.includes('created') || eventContent.includes('opened')) {
+          data.mergeRequests.created++;
+        }
+        if (eventContent.includes('approved')) {
+          data.mergeRequests.approved++;
         }
       }
     }
 
-    console.log('解析 GitLab 数据:', data);
+    console.log('发现的图标类型:', Array.from(iconDebug));
+    console.log(`\n解析 GitLab 数据 (${dateRange}):`, {
+      commits: data.commits,
+      mergeRequests: data.mergeRequests,
+      projectsCount: Object.keys(data.projects).length,
+      projects: data.projects
+    });
 
   } catch (error) {
     console.error('解析 GitLab 数据失败:', error);
@@ -823,6 +1525,63 @@ function extractCommitMessages(eventContent) {
   }
 
   return messages;
+}
+
+/**
+ * 从事件内容中提取项目名称
+ * @param {string} eventContent - 事件HTML内容
+ * @returns {string|null} 项目名称
+ */
+function extractProjectName(eventContent) {
+  try {
+    // 匹配项目链接，支持多层级路径（如 /group/subgroup/project 或 /xmabr/apt/lesterpweb/lesterpweb）
+    const projectRegex = /<a[^>]*href="\/([^"]+)"[^>]*>/;
+    const match = eventContent.match(projectRegex);
+
+    if (match && match[1]) {
+      const path = match[1];
+      // 确保路径包含至少一个斜杠（即至少是 group/project 格式）
+      // 避免匹配到非项目路径（如 /users/sign_in）
+      if (path.includes('/') && !path.includes('users/') && !path.includes('help/')) {
+        return path;
+      }
+    }
+
+    // 备用方案：匹配 data-project 属性
+    const dataProjectRegex = /data-project="([^"]+)"/;
+    const dataMatch = eventContent.match(dataProjectRegex);
+    if (dataMatch && dataMatch[1]) {
+      return dataMatch[1];
+    }
+
+  } catch (error) {
+    console.error('提取项目名称失败:', error);
+  }
+
+  return null;
+}
+
+/**
+ * 提取项目名称
+ * 从 <span class="project-name"> 中提取项目名称
+ * @param {string} eventContent - 事件HTML内容
+ * @returns {string|null} 项目名称
+ */
+function extractProjectNameFromAt(eventContent) {
+  try {
+    // 提取 <span class="project-name">项目名</span> 中的内容
+    const projectNameRegex = /<span class="project-name">([^<]+)<\/span>/;
+    const match = eventContent.match(projectNameRegex);
+
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+
+  } catch (error) {
+    console.error('提取项目名称失败:', error);
+  }
+
+  return null;
 }
 
 /**
@@ -872,10 +1631,10 @@ async function authenticatedFetch(url, options = {}) {
 }
 
 /**
- * 生成 AI 工作总结
+ * 分析工作内容（AI）
  */
 async function generateAISummary() {
-  console.log('开始生成 AI 工作总结...');
+  console.log('开始分析工作内容...');
 
   try {
     // 获取配置和数据
@@ -891,30 +1650,71 @@ async function generateAISummary() {
     const provider = systems.zhipu.provider || 'zhipu';
     console.log('当前 AI 服务商:', provider);
 
-    // 检查今日提交数据
-    if (!data?.gitlab?.todayCommitMessages || data.gitlab.todayCommitMessages.length === 0) {
-      throw new Error('今日暂无提交记录');
+    // 检查提交数据
+    if (!data?.gitlab?.commitMessages || data.gitlab.commitMessages.length === 0) {
+      throw new Error('暂无提交记录');
     }
 
-    const commitMessages = data.gitlab.todayCommitMessages;
+    const gitlabData = data.gitlab;
+    const commitMessages = gitlabData.commitMessages;
+    const dateRange = gitlabData.dateRange || 'today';
+
+    // 根据时间范围设置文案
+    const dateRangeMap = {
+      today: '今日',
+      week: '本周',
+      month: '本月'
+    };
+    const dateRangeText = dateRangeMap[dateRange] || '今日';
+
     console.log('提交消息:', commitMessages);
+    console.log('时间范围:', dateRangeText);
+
+    // 构建统计摘要
+    let statsText = `提交记录：\n${commitMessages.map((msg, i) => `${i + 1}. ${msg}`).join('\n')}`;
+
+    // 统计提交数量
+    statsText += `\n\n总提交数：${gitlabData.commits || 0} 次`;
+
+    // 添加 MR 合并统计
+    if (gitlabData.mergeRequests && gitlabData.mergeRequests.merged > 0) {
+      statsText += `\n合并 MR：${gitlabData.mergeRequests.merged} 个`;
+    }
+
+    // 添加项目分布
+    if (gitlabData.projects && Object.keys(gitlabData.projects).length > 0) {
+      const projectList = Object.entries(gitlabData.projects)
+        .sort((a, b) => b[1] - a[1]) // 按提交次数排序
+        .map(([name, count]) => `${name}(${count}次)`)
+        .join('、');
+      statsText += `\n\n项目：${projectList}`;
+    }
 
     // 构建 prompt
-    const prompt = `你是一位专业的技术总结助手。根据以下今日的 Git 提交记录，生成一份简洁的工作总结：
+    const prompt = `你是一位专业的技术分析助手。根据以下${dateRangeText}的 Git 活动记录，分析工作内容：
 
-提交记录：
-${commitMessages.map((msg, i) => `${i + 1}. ${msg}`).join('\n')}
+${statsText}
 
-请用中文总结今天完成的工作，要求：
+请用中文分析${dateRangeText}完成的工作，要求：
 1. 分析提交记录，归纳主要工作内容
 2. 按功能模块分类（如果有多个模块）
 3. 使用简洁的列表形式
-4. 突出重点功能和改进
+
+4. **重点：在分析最后，请客观指出工作中存在的不足，并给出改进建议**（2-3句话）。请从以下维度评估：
+   - 工作量：提交数是否偏少？如果少于 5 次，建议注意工作产出或及时提交代码备份
+   - 工作集中度：是否涉及过多项目？如果项目超过 2 个，建议集中精力先完成主要模块
+   - 代码审查：合并 MR 数量是否合理？如果为 0，建议多参与代码审查和团队协作
+   - 提交质量：提交信息是否清晰？是否有过多的琐碎修改？
+
+   **请直接指出问题，不要过度美化。目的是帮助改进工作方式。**
 
 格式示例：
 • 功能开发：...
 • Bug 修复：...
-• 优化改进：...`;
+• 代码审查：...
+• 优化改进：...
+
+⚠️ 改进建议：[直接指出具体问题] + [给出具体改进方向]`;
 
     // 调用对应的 AI API
     let summary;
@@ -959,7 +1759,7 @@ ${commitMessages.map((msg, i) => `${i + 1}. ${msg}`).join('\n')}
  * @see docs/canteen/ai-integration.md AI集成文档
  * @see CLAUDE.md 项目规范
  */
-async function callZhipuAPI(apiKey, prompt, maxTokens = 500, systemPrompt = '你是一位专业的技术总结助手，擅长分析代码提交记录并生成简洁明了的工作总结。') {
+async function callZhipuAPI(apiKey, prompt, maxTokens = 500, systemPrompt = '你是一位专业的技术分析助手，擅长分析代码提交记录并输出简洁明了的工作内容分析。') {
   const url = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 
   const requestBody = {
@@ -1162,33 +1962,40 @@ async function searchDishImage(dishName, apiKey, engine = 'bing') {
       const errorText = await response.text();
       console.error('SerpAPI 请求失败:', response.status, response.statusText);
       console.error('错误详情:', errorText);
-      return '';
+      return [];
     }
 
     const data = await response.json();
     console.log('SerpAPI 响应:', data);
 
-    // 解析图片结果
-    let imageUrl = '';
+    // 解析图片结果 - 获取前3张图片
+    const imageUrls = [];
 
     if (data.images_results && data.images_results.length > 0) {
-      // Google 和 Bing 都使用相同的结构
-      const firstImage = data.images_results[0];
-      imageUrl = firstImage.original || firstImage.thumbnail || '';
+      // 获取前3张图片（如果不足3张则获取全部）
+      const count = Math.min(3, data.images_results.length);
+
+      for (let i = 0; i < count; i++) {
+        const image = data.images_results[i];
+        const imageUrl = image.original || image.thumbnail || '';
+        if (imageUrl) {
+          imageUrls.push(imageUrl);
+        }
+      }
     }
 
-    if (imageUrl) {
-      console.log('✅ 找到图片:', imageUrl);
+    if (imageUrls.length > 0) {
+      console.log(`✅ 找到 ${imageUrls.length} 张图片:`, imageUrls);
     } else {
       console.warn('⚠️ 未找到图片结果');
       console.warn('响应数据结构:', JSON.stringify(data, null, 2));
     }
 
-    return imageUrl;
+    return imageUrls;
 
   } catch (error) {
     console.error('SerpAPI 搜索图片失败:', error);
-    return '';
+    return [];
   }
 }
 
@@ -1207,32 +2014,46 @@ async function generateDishInfoWithImage(dishName, mealType) {
     const systems = result.systems || {};
     const serpapi = result.serpapi || {};
 
-    if (!systems.zhipu || !systems.zhipu.apiKey) {
-      throw new Error('智谱AI未配置，请先在设置中配置 API Key');
+    // 2. 检查 AI API 配置
+    const provider = systems.zhipu?.provider || 'zhipu';
+    const apiKey = systems.zhipu?.apiKey;
+
+    if (!apiKey) {
+      const errorMsg = '菜品详情功能需要配置 AI API。\n\n请点击扩展图标，进入设置页面配置 AI 服务商和 API Key。';
+      throw new Error(errorMsg);
     }
 
-    // 2. 生成 Prompt（不含图片）
+    // 3. 生成 Prompt（不含图片）
     const prompt = generateDishAnalysisPrompt(dishName, mealType);
 
-    // 3. 调用 AI 生成菜品信息
+    // 4. 调用 AI 生成菜品信息
     const systemPrompt = '你是一位专业的美食顾问，擅长分析菜品特点。';
-    console.log('生成菜品信息:', dishName);
+    console.log('生成菜品信息:', dishName, '使用AI:', provider);
 
-    const response = await callZhipuAPI(
-      systems.zhipu.apiKey,
-      prompt,
-      500,  // maxTokens
-      systemPrompt
-    );
+    let response;
+    switch (provider) {
+      case 'zhipu':
+        response = await callZhipuAPI(apiKey, prompt, 500, systemPrompt);
+        break;
+      case 'aliyun':
+        response = await callAliyunAPI(apiKey, prompt);
+        break;
+      case 'openai':
+      case 'relay':
+        response = await callOpenAI(apiKey, prompt, provider === 'relay');
+        break;
+      default:
+        throw new Error('不支持的 AI 服务商');
+    }
 
-    // 4. 解析 JSON
+    // 5. 解析 JSON
     const dishData = extractJSONFromResponse(response);
 
     if (!dishData) {
       throw new Error('AI返回数据无法解析为JSON');
     }
 
-    // 5. 验证数据
+    // 6. 验证数据
     if (!dishData.dishName || !dishData.intro ||
         !Array.isArray(dishData.ingredients) ||
         !Array.isArray(dishData.cookingMethods) ||
@@ -1241,19 +2062,19 @@ async function generateDishInfoWithImage(dishName, mealType) {
       throw new Error('AI返回数据格式无效');
     }
 
-    // 6. 使用 SerpAPI 搜索图片（如果已配置）
-    let imageUrl = '';
+    // 7. 使用 SerpAPI 搜索图片（如果已配置）
+    let imageUrls = [];
 
     if (serpapi && serpapi.apiKey) {
       const engine = serpapi.engine || 'bing';  // 默认 Bing（国内访问稳定）
       console.log('使用 SerpAPI 搜索图片...');
-      imageUrl = await searchDishImage(dishName, serpapi.apiKey, engine);
+      imageUrls = await searchDishImage(dishName, serpapi.apiKey, engine);
     } else {
-      console.warn('⚠️ SerpAPI 未配置，跳过图片搜索');
+      console.warn('⚠️ SerpAPI 未配置，图片将显示为空。如需显示图片，请在设置中配置 SerpAPI Key。');
     }
 
-    // 7. 合并数据
-    dishData.imageUrl = imageUrl;
+    // 8. 合并数据
+    dishData.imageUrls = imageUrls;  // 改为数组
     dishData.timestamp = Date.now();
 
     console.log('✅ 菜品详情生成完成:', dishData);
@@ -1261,16 +2082,53 @@ async function generateDishInfoWithImage(dishName, mealType) {
 
   } catch (error) {
     console.error('生成菜品详情失败:', error);
+    throw error; // 抛出错误让上层处理
+  }
+}
 
-    // 返回降级数据
+/**
+ * 检查 API 配置状态
+ * @returns {Promise<Object>} 配置检查结果
+ */
+async function checkApiConfig() {
+  try {
+    const result = await chrome.storage.local.get(['systems', 'serpapi']);
+    const systems = result.systems || {};
+    const serpapi = result.serpapi || {};
+
+    const provider = systems.zhipu?.provider || 'zhipu';
+    const aiApiKey = systems.zhipu?.apiKey;
+    const serpapiKey = serpapi?.apiKey;
+
+    // 检查 AI API 配置
+    if (!aiApiKey) {
+      return {
+        success: false,
+        missingConfigs: ['ai'],
+        message: '⚙️ 需要配置 AI API\n\n菜品详情功能需要 AI 来分析菜品的食材、做法等信息。\n\n请点击扩展图标，进入设置页面：\n1. 选择 AI 服务商（智谱 AI / 阿里云 / OpenAI）\n2. 填写对应的 API Key'
+      };
+    }
+
+    // AI 已配置，检查 SerpAPI（可选）
+    if (!serpapiKey) {
+      return {
+        success: true,
+        warning: true,
+        missingConfigs: ['serpapi'],
+        message: '⚠️ 图片功能未配置\n\n菜品详情将不显示图片。如需显示菜品图片，请配置 SerpAPI Key（可选）。'
+      };
+    }
+
+    // 所有配置完整
     return {
-      dishName,
-      intro: '暂无介绍',
-      ingredients: [],
-      cookingMethods: [],
-      cookingSteps: [],
-      imageUrl: '',
-      timestamp: Date.now(),
+      success: true,
+      message: '配置完整'
+    };
+
+  } catch (error) {
+    console.error('检查配置失败:', error);
+    return {
+      success: false,
       error: error.message
     };
   }
@@ -1329,7 +2187,7 @@ async function callAliyunAPI(apiKey, prompt) {
       messages: [
         {
           role: 'system',
-          content: '你是一位专业的技术总结助手，擅长分析代码提交记录并生成简洁明了的工作总结。'
+          content: '你是一位专业的技术分析助手，擅长分析代码提交记录并输出简洁明了的工作内容分析。'
         },
         {
           role: 'user',
@@ -1547,6 +2405,127 @@ async function checkOALogAndRemind() {
 
   } catch (error) {
     console.error('检查 OA 日志失败:', error);
+  }
+}
+
+/**
+ * 生成 Bug AI 总结（批判性分析）
+ */
+async function generateBugAISummary() {
+  console.log('开始生成 Bug AI 总结...');
+
+  try {
+    // 获取配置和数据
+    const result = await chrome.storage.local.get(['systems', 'data']);
+    const { systems, data } = result;
+
+    // 检查 API Key
+    if (!systems?.zhipu?.apiKey) {
+      throw new Error('请先在设置中配置 AI API Key');
+    }
+
+    // 检查 provider
+    const provider = systems.zhipu.provider || 'zhipu';
+    console.log('当前 AI 服务商:', provider);
+
+    // 检查 Bug 数据
+    if (!data?.zentao?.bugs || data.zentao.bugs.length === 0) {
+      throw new Error('暂无 Bug 数据');
+    }
+
+    const bugs = data.zentao.bugs;
+    console.log('Bug 数量:', bugs.length);
+
+    // 构建 Bug 列表文本
+    const bugListText = bugs.map((bug, index) => {
+      return `${index + 1}. [${bug.status === 'active' ? '待处理' : '已解决'}] ${bug.title}`;
+    }).join('\n');
+
+    // 统计 Bug 状态
+    const activeBugs = bugs.filter(b => b.status === 'active').length;
+    const resolvedBugs = bugs.filter(b => b.status === 'resolved').length;
+
+    // 构建批判性的 prompt
+    const prompt = `你是一位严格的技术质量顾问。请对以下本月 Bug 数据进行**批判性分析**，并给出改进建议。
+
+**Bug 统计**：
+- 总数：${bugs.length} 个
+- 待处理：${activeBugs} 个
+- 已解决：${resolvedBugs} 个
+
+**Bug 列表**：
+${bugListText}
+
+**分析要求**：
+1. **问题诊断**（直接指出问题，不要美化）：
+   - Bug 数量是否过多？如果超过 10 个，说明代码质量有问题
+   - 待处理 Bug 占比是否过高？如果超过 30%，说明修复速度太慢
+   - **重点：从 Bug 标题中识别重复模块/功能**（如"配方单位"出现多次、"订单"相关 Bug 集中等）
+   - 是否有严重 Bug？（从标题中推测）
+
+2. **根本原因分析**（简洁，2-3 条核心原因，**必须基于实际 Bug 标题**）：
+   - **禁止使用泛泛的术语**（如"测试覆盖率不足"、"代码复杂度较高"、"部分模块设计不合理"）
+   - **必须从实际 Bug 标题中提取信息**，例如：
+     * 如果"配方单位"相关 Bug 出现 3 次以上 → 说明"配方单位模块需求不够完善，边界条件考虑不足"
+     * 如果"订单状态"相关 Bug 集中 → 说明"订单状态流转逻辑存在漏洞"
+     * 如果多个"页面显示"Bug → 说明"前端数据渲染缺少空值校验"
+   - **引用具体 Bug 标题作为证据**
+
+3. **改进建议**（简洁，3-4 条核心建议，**针对具体模块**）：
+   - **禁止空话套话**（如"加强代码审查"、"提高测试覆盖率"）
+   - **必须针对具体模块给出建议**，例如：
+     * "重构配方单位模块，补充单位转换的边界测试用例"
+     * "梳理订单状态流转图，补充状态机测试"
+     * "前端统一添加数据校验工具函数"
+
+**输出格式**：
+## 📊 Bug 概况
+[统计数据分析，2-3句话]
+
+## ⚠️ 问题诊断
+[直接指出问题，3-4个要点，**必须引用具体 Bug 标题**]
+
+## 🔍 根本原因
+- [原因1：基于具体 Bug 标题分析，例如："配方单位"相关 Bug（#123、#145、#167）反复出现，说明...]
+- [原因2：同样基于实际数据]
+
+## 💡 改进建议
+- [建议1：针对具体模块，例如："针对配方单位模块，建议..."]
+- [建议2：针对具体问题]
+- [建议3：针对具体场景]
+
+**关键要求**：
+- ⚠️ 严禁使用"测试覆盖率不足"、"代码复杂度高"等泛泛术语
+- ✅ 必须从实际 Bug 标题中提取模块名、功能点，作为分析依据
+- ✅ 根本原因必须引用具体 Bug 编号或标题作为证据
+- ✅ 改进建议必须针对具体模块和场景，可直接执行`;
+
+    // 调用对应的 AI API
+    let summary;
+
+    switch (provider) {
+      case 'zhipu':
+        summary = await callZhipuAPI(systems.zhipu.apiKey, prompt, 800, '你是一位严格的技术质量顾问，擅长从 Bug 数据中发现问题并给出改进建议。');
+        break;
+      case 'aliyun':
+        summary = await callAliyunAPI(systems.zhipu.apiKey, prompt);
+        break;
+      case 'openai':
+        summary = await callOpenAIAPI(systems.zhipu.apiKey, prompt);
+        break;
+      case 'relay':
+        summary = await callRelayAPI(systems.zhipu.apiKey, prompt);
+        break;
+      default:
+        throw new Error('不支持的 AI 服务商');
+    }
+
+    console.log('生成的 Bug 总结:', summary);
+    return summary;
+
+  } catch (error) {
+    console.error('生成 Bug AI 总结失败:', error);
+    throw error;
   }
 }
 

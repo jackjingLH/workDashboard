@@ -2,6 +2,19 @@
  * 工作增强工具 - Content Script 样式
  */
 
+/* ===== HTML 和 Body 布局 ===== */
+html {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+}
+
+body {
+  flex: 1;
+  min-width: 0;
+  transition: all 0.3s ease;
+}
+
 /* ===== 全局样式 ===== */
 #work-enhance-sidebar {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -10,6 +23,16 @@
   --text-secondary: #6b7280;
   --bg-gray: #f9fafb;
   --border-gray: #e5e7eb;
+  --sidebar-width: 350px;
+  display: flex;
+  flex-direction: column;
+  width: 0;
+  overflow: hidden;
+  transition: width 0.3s ease;
+}
+
+#work-enhance-sidebar.active {
+  width: var(--sidebar-width);
 }
 
 /* ===== 侧边栏触发按钮 ===== */
@@ -18,77 +41,58 @@
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 48px;
-  height: 120px;
-  background: var(--primary-gradient);
-  border-radius: 12px 0 0 12px;
+  width: 36px;
+  height: 36px;
+  background: white;
+  border-radius: 50%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   cursor: pointer;
-  box-shadow: -2px 0 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   transition: all 0.3s ease;
   z-index: 9999;
-  color: white;
 }
 
 .sidebar-trigger:hover {
-  width: 56px;
-  box-shadow: -4px 0 20px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  transform: translateY(-50%) scale(1.05);
 }
 
 .trigger-icon {
-  font-size: 24px;
-  font-style: normal;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 16px;
+  height: 12px;
 }
 
-.trigger-text {
-  writing-mode: vertical-rl;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 2px;
-}
-
-/* ===== 侧边栏遮罩层 ===== */
-.sidebar-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
+.trigger-icon span {
+  display: block;
   width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-  z-index: 10000;
+  height: 2px;
+  background: #6b7280;
+  border-radius: 1px;
+  transition: all 0.3s ease;
 }
 
-.sidebar-overlay.active {
-  opacity: 1;
-  pointer-events: all;
+.sidebar-trigger:hover .trigger-icon span {
+  background: #667eea;
 }
 
 /* ===== 侧边栏主体 ===== */
 .sidebar-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 350px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   height: 100vh;
   background: white;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
-  transform: translateX(100%);
-  transition: transform 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  z-index: 10001;
   overflow: hidden;
 }
 
 .sidebar-panel.active {
-  transform: translateX(0);
+  /* 不需要额外的样式，由父容器的 width 控制 */
 }
 
 /* 侧边栏头部 */
@@ -198,10 +202,361 @@
   gap: 12px;
 }
 
+/* 功能按钮样式 */
+.action-btn {
+  padding: 8px 16px;
+  background: var(--primary-gradient);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+}
+
+.action-btn:active {
+  transform: translateY(0);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .status-text {
   font-size: 13px;
   color: #10b981;
   font-weight: 500;
+}
+
+/* ===== GitLab 模块样式 ===== */
+
+/* 日期范围选择器 */
+.date-range-select {
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border-gray);
+  border-radius: 6px;
+  font-size: 12px;
+  background: white;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.date-range-select:hover {
+  border-color: #667eea;
+}
+
+.date-range-select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+/* 加载占位符 */
+.loading-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.spinner-mini {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* GitLab 数据展示 */
+.gitlab-data {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border-gray);
+}
+
+.stat-item:last-child {
+  border-bottom: none;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.stat-value-small {
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: 200px;
+  text-align: right;
+  word-break: break-word;
+}
+
+/* 登录提醒 */
+.login-reminder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #92400e;
+}
+
+.login-link-btn {
+  padding: 6px 16px;
+  background: #fbbf24;
+  color: #92400e;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.login-link-btn:hover {
+  background: #f59e0b;
+}
+
+/* AI 工作内容分析 */
+.summary-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.summary-result {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-gray);
+  border-radius: 8px;
+  border: 1px solid var(--border-gray);
+}
+
+.summary-result h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #667eea;
+}
+
+.summary-content {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.summary-error {
+  margin-top: 12px;
+  padding: 10px;
+  background: #fee2e2;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #991b1b;
+}
+
+/* ===== 禅道模块样式 ===== */
+.zentao-data {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 禅道分类容器 */
+.zentao-category {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-gray);
+}
+
+.zentao-category:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* 禅道摘要区 */
+.zentao-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 迷你展开按钮 */
+.toggle-btn-mini {
+  padding: 4px 10px;
+  background: var(--bg-gray);
+  color: #667eea;
+  border: 1px solid var(--border-gray);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.toggle-btn-mini:hover {
+  background: #e5e7eb;
+  border-color: #667eea;
+}
+
+.toggle-btn-mini.active {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+/* 禅道详情列表 */
+.zentao-detail-list {
+  margin-top: 8px;
+  padding-left: 8px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.zentao-detail-list.expanded {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* 迷你禅道列表项 */
+.zentao-item-mini {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: var(--bg-gray);
+  border-radius: 6px;
+  border: 1px solid var(--border-gray);
+  transition: all 0.2s ease;
+}
+
+.zentao-item-mini:hover {
+  background: #f3f4f6;
+  border-color: #667eea;
+  transform: translateX(2px);
+}
+
+.zentao-item-mini:last-child {
+  margin-bottom: 0;
+}
+
+/* 迷你禅道项目内容 */
+.zentao-content-mini {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 迷你禅道项目标题 */
+.zentao-title-mini {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.zentao-title-mini a {
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.zentao-title-mini a:hover {
+  color: #667eea;
+  text-decoration: underline;
+}
+
+/* 迷你禅道状态标签 */
+.zentao-status-mini {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 任务状态 */
+.zentao-status-mini.task-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.zentao-status-mini.task-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Bug 状态 */
+.zentao-status-mini.bug-active {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.zentao-status-mini.bug-resolved {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.zentao-status-mini.bug-closed {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 空状态提示 */
+.zentao-empty {
+  padding: 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+  background: var(--bg-gray);
+  border-radius: 6px;
+  margin-top: 8px;
 }
 
 /* 开关按钮样式 */
@@ -268,54 +623,51 @@ input:checked + .slider:before {
 
 /* ===== Modal 弹窗（居中显示） ===== */
 #dish-detail-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10002;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 10002 !important;
+  display: none !important; /* 默认隐藏 */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  pointer-events: none !important; /* 默认不拦截事件 */
+}
+
+#dish-detail-modal.active {
+  display: block !important; /* 激活时显示 */
+  pointer-events: auto !important; /* 激活时拦截事件 */
 }
 
 /* Modal 遮罩层 */
 #dish-detail-modal .modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.6);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-#dish-detail-modal.active .modal-overlay {
-  opacity: 1;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  z-index: 10003 !important; /* 遮罩层 */
+  pointer-events: auto !important; /* 确保可以点击 */
 }
 
 /* Modal 对话框 */
 .modal-dialog {
-  position: relative;
-  width: 90%;
-  max-width: 600px;
-  max-height: 85vh;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
-  opacity: 0;
-  transform: scale(0.9) translateY(20px);
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-#dish-detail-modal.active .modal-dialog {
-  opacity: 1;
-  transform: scale(1) translateY(0);
+  position: fixed !important; /* 固定定位 */
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important; /* 居中 */
+  width: 90% !important;
+  max-width: 600px !important;
+  max-height: 85vh !important;
+  background: white !important;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  z-index: 10005 !important; /* 确保在遮罩层之上 */
+  pointer-events: auto !important; /* 确保弹窗内容可交互 */
 }
 
 /* Modal 头部 */
@@ -358,8 +710,11 @@ input:checked + .slider:before {
 /* Modal 主体 */
 .modal-dialog .modal-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 24px;
+  -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
 }
 
 /* ===== 菜品详情内容 ===== */
@@ -376,6 +731,100 @@ input:checked + .slider:before {
   object-fit: cover;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 图片轮播容器 */
+.dish-carousel {
+  position: relative;
+  width: 100%;
+  height: 250px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f9fafb; /* 添加浅灰色背景 */
+}
+
+.dish-carousel-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  transition: transform 0.3s ease;
+}
+
+.dish-carousel-item {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  display: flex; /* 添加 flex 布局 */
+  align-items: center; /* 垂直居中 */
+  justify-content: center; /* 水平居中 */
+  background: #f9fafb; /* 浅灰色背景 */
+}
+
+.dish-carousel-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 改为 contain 显示完整图片 */
+}
+
+/* 轮播控制按钮 */
+.dish-carousel-control {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.dish-carousel-control:hover {
+  background: rgba(0, 0, 0, 0.7);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.dish-carousel-control.prev {
+  left: 12px;
+}
+
+.dish-carousel-control.next {
+  right: 12px;
+}
+
+/* 轮播指示器 */
+.dish-carousel-indicators {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.dish-carousel-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dish-carousel-indicator.active {
+  background: white;
+  width: 24px;
+  border-radius: 4px;
 }
 
 .dish-image-placeholder {
@@ -489,16 +938,17 @@ input:checked + .slider:before {
 
 .step-number {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 32px; /* 增大尺寸 */
+  height: 32px; /* 增大尺寸 */
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--primary-gradient);
-  color: white;
-  font-size: 13px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; /* 强制应用渐变 */
+  color: white !important; /* 强制白色文字 */
+  font-size: 14px; /* 增大字号 */
   font-weight: bold;
   border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.4); /* 添加阴影增强对比 */
 }
 
 .step-text {
@@ -605,7 +1055,24 @@ input:checked + .slider:before {
 
 /* ===== 响应式调整 ===== */
 @media (max-width: 768px) {
-  .sidebar-panel {
+  /* 移动端改为覆盖模式，不挤压 */
+  html {
+    display: block;
+  }
+
+  body {
+    width: 100%;
+  }
+
+  #work-enhance-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    z-index: 10001;
+  }
+
+  #work-enhance-sidebar.active {
     width: 100%;
   }
 
@@ -615,16 +1082,13 @@ input:checked + .slider:before {
   }
 
   .sidebar-trigger {
-    width: 40px;
-    height: 100px;
+    width: 32px;
+    height: 32px;
   }
 
   .trigger-icon {
-    font-size: 20px;
-  }
-
-  .trigger-text {
-    font-size: 12px;
+    width: 14px;
+    height: 10px;
   }
 }
 

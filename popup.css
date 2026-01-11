@@ -572,6 +572,7 @@ body {
 
 /* 菜品图片 */
 .dish-image-container {
+  position: relative;
   width: 100%;
   height: 250px;
   border-radius: 12px;
@@ -585,6 +586,92 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* 图片轮播容器 */
+.dish-carousel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.dish-carousel-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  transition: transform 0.3s ease;
+}
+
+.dish-carousel-item {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+}
+
+.dish-carousel-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 轮播控制按钮 */
+.dish-carousel-control {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.dish-carousel-control:hover {
+  background: rgba(0, 0, 0, 0.7);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.dish-carousel-control.prev {
+  left: 10px;
+}
+
+.dish-carousel-control.next {
+  right: 10px;
+}
+
+/* 轮播指示器 */
+.dish-carousel-indicators {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+
+.dish-carousel-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dish-carousel-indicator.active {
+  background: white;
+  width: 20px;
+  border-radius: 3px;
 }
 
 .dish-image-placeholder {
@@ -744,6 +831,274 @@ body {
   font-size: 13px;
   line-height: 1.6;
   color: #374151;
+}
+
+/* 配置错误提示 */
+.config-error-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  gap: 20px;
+}
+
+.config-error-icon {
+  font-size: 64px;
+  opacity: 0.8;
+}
+
+.config-error-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #6b7280;
+  white-space: pre-line;
+}
+
+.config-error-btn {
+  padding: 12px 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.config-error-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+}
+
+.config-error-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* 响应式调整 */
+@media (max-width: 500px) {
+  .dish-sidebar {
+    width: 100%;
+  }
+}
+
+/* ===== 禅道模块样式 ===== */
+
+/* 禅道分类容器 */
+.zentao-category {
+  margin-bottom: 12px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
+}
+
+.zentao-category:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* 禅道摘要区 */
+.zentao-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 展开/收起按钮 */
+.toggle-btn {
+  padding: 4px 12px;
+  background: #f3f4f6;
+  color: #667eea;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.toggle-btn:hover {
+  background: #e5e7eb;
+  border-color: #667eea;
+}
+
+.toggle-btn.active {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+/* 禅道详情列表 */
+.zentao-detail-list {
+  margin-top: 8px;
+  padding-left: 8px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.zentao-detail-list.expanded {
+  max-height: none; /* 移除高度限制 */
+  overflow-y: visible;
+}
+
+/* 禅道列表项 */
+.zentao-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.zentao-item:hover {
+  background: #f3f4f6;
+  border-color: #667eea;
+  transform: translateX(2px);
+}
+
+.zentao-item:last-child {
+  margin-bottom: 0;
+}
+
+/* 禅道项目 ID */
+.zentao-id {
+  flex-shrink: 0;
+  width: 45px;
+  padding: 2px 6px;
+  background: #667eea;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  text-align: center;
+}
+
+/* 禅道项目内容 */
+.zentao-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 禅道项目标题 */
+.zentao-title {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* 禅道项目标题链接 */
+.zentao-title a {
+  color: #374151;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.zentao-title a:hover {
+  color: #667eea;
+  text-decoration: underline;
+}
+
+/* 禅道项目元信息 */
+.zentao-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 禅道状态标签 */
+.zentao-status {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 任务状态：只区分完成和未完成 */
+.zentao-status.task-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.zentao-status.task-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Bug 状态 */
+.zentao-status.bug-active {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.zentao-status.bug-resolved {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.zentao-status.bug-closed {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 需求状态 */
+.zentao-status.story-draft {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.zentao-status.story-active {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.zentao-status.story-closed {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 禅道优先级 */
+.zentao-priority {
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.zentao-priority.high {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* 禅道指派人 */
+.zentao-assignedTo {
+  font-size: 10px;
+  color: #6b7280;
+}
+
+/* 空状态提示 */
+.zentao-empty {
+  padding: 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  margin-top: 8px;
 }
 
 /* 响应式调整 */

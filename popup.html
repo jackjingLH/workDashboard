@@ -10,7 +10,7 @@
   <div class="container">
     <!-- 头部 -->
     <header class="header">
-      <h1 class="title">📊 工作台</h1>
+      <h1 class="title">📊 工作概览</h1>
       <div class="actions">
         <button id="refreshBtn" class="btn btn-icon" title="刷新数据">
           <span class="icon">🔄</span>
@@ -111,6 +111,139 @@
       <!-- 数据展示面板 -->
       <div id="dashboardPanel" class="dashboard-panel">
 
+        <!-- GitLab -->
+        <section class="system-section" id="gitlabSection" style="display: none;">
+          <h2 class="section-title">
+            <span class="icon">🦊</span>
+            GitLab
+            <select id="gitlabDateRange" class="date-range-select" title="日期范围">
+              <option value="today">今天</option>
+              <option value="week">本周</option>
+              <option value="month">本月</option>
+            </select>
+          </h2>
+          <div class="section-content">
+            <!-- 未登录提示 -->
+            <div id="gitlabLoginReminder" class="login-reminder" style="display: none;">
+              <p>⚠️ 您尚未登录 GitLab 系统</p>
+              <a id="gitlabLoginLink" href="#" target="_blank" class="login-link">点击前往登录</a>
+            </div>
+
+            <div id="gitlabDataContent">
+              <div class="info-item">
+                <span class="label" id="gitlabCommitsLabel">今日提交:</span>
+                <span class="value" id="gitlabCommits">-</span>
+              </div>
+              <div class="info-item" id="gitlabMrItem" style="display: none;">
+                <span class="label">合并 MR:</span>
+                <span class="value" id="gitlabMR">-</span>
+              </div>
+              <div class="info-item" id="gitlabProjectsItem" style="display: none;">
+                <span class="label">项目:</span>
+                <span class="value" id="gitlabProjects" style="font-size: 11px;">-</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI 工作总结 -->
+          <div class="ai-summary-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+            <button id="generateSummaryBtn" class="btn btn-primary" style="width: 100%; font-size: 13px;">
+              <span id="generateSummaryBtnText">🤖 生成今日工作总结</span>
+            </button>
+
+            <!-- 总结加载中 -->
+            <div id="summaryLoading" class="summary-loading" style="display: none; text-align: center; padding: 12px;">
+              <div class="spinner" style="width: 20px; height: 20px; margin: 0 auto 8px;"></div>
+              <p style="font-size: 12px; color: #999;">AI 正在生成总结...</p>
+            </div>
+
+            <!-- 总结结果 -->
+            <div id="summaryResult" class="summary-result" style="display: none; margin-top: 12px;">
+              <h4 style="font-size: 13px; color: #667eea; margin-bottom: 8px;">📝 今日工作总结</h4>
+              <div id="summaryContent" style="font-size: 12px; line-height: 1.6; color: #333; white-space: pre-wrap;"></div>
+            </div>
+
+            <!-- 错误提示 -->
+            <div id="summaryError" class="summary-error" style="display: none; margin-top: 12px; padding: 8px; background: #fee; border-radius: 4px; font-size: 12px; color: #c00;"></div>
+          </div>
+        </section>
+
+        <!-- 禅道 -->
+        <section class="system-section" id="zentaoSection" style="display: none;">
+          <h2 class="section-title">
+            <span class="icon">🐛</span>
+            禅道
+            <span class="date-hint" style="font-size: 11px; color: #999; margin-left: auto; font-weight: normal;">本月数据</span>
+          </h2>
+          <div class="section-content">
+            <!-- 未登录提示 -->
+            <div id="zentaoLoginReminder" class="login-reminder" style="display: none;">
+              <p>⚠️ 您尚未登录禅道系统</p>
+              <a id="zentaoLoginLink" href="#" target="_blank" class="login-link">点击前往登录</a>
+            </div>
+
+            <div id="zentaoDataContent">
+              <!-- 待处理任务 -->
+              <div class="zentao-category">
+                <div class="zentao-summary">
+                  <div class="info-item">
+                    <span class="label">📋 本月任务:</span>
+                    <span class="value" id="zentaoTasksCount">-</span>
+                  </div>
+                  <button id="toggleTasksBtn" class="toggle-btn" style="display: none;">
+                    展开 ▼
+                  </button>
+                </div>
+                <div class="info-item" id="zentaoTasksEstimate" style="display: none; padding-top: 8px; border-top: 1px dashed #e5e7eb;">
+                  <span class="label">⏱️ 预计工时:</span>
+                  <span class="value" id="zentaoTasksEstimateValue">-</span>
+                </div>
+                <div id="zentaoTasksList" class="zentao-detail-list" style="display: none;">
+                  <!-- 任务列表将通过 JS 动态生成 -->
+                </div>
+              </div>
+
+              <!-- 待修复 Bug -->
+              <div class="zentao-category">
+                <div class="zentao-summary">
+                  <div class="info-item">
+                    <span class="label">🐞 本月 Bug:</span>
+                    <span class="value" id="zentaoBugsCount">-</span>
+                  </div>
+                  <button id="toggleBugsBtn" class="toggle-btn" style="display: none;">
+                    展开 ▼
+                  </button>
+                </div>
+                <div id="zentaoBugsList" class="zentao-detail-list" style="display: none;">
+                  <!-- Bug 列表将通过 JS 动态生成 -->
+                </div>
+
+                <!-- AI Bug 总结 -->
+                <div class="ai-summary-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
+                  <button id="generateBugSummaryBtn" class="btn btn-primary" style="width: 100%; font-size: 13px;">
+                    <span id="generateBugSummaryBtnText">🤖 AI 分析本月 Bug</span>
+                  </button>
+
+                  <!-- 总结加载中 -->
+                  <div id="bugSummaryLoading" class="summary-loading" style="display: none; text-align: center; padding: 12px;">
+                    <div class="spinner" style="width: 20px; height: 20px; margin: 0 auto 8px;"></div>
+                    <p style="font-size: 12px; color: #999;">AI 正在分析...</p>
+                  </div>
+
+                  <!-- 总结结果 -->
+                  <div id="bugSummaryResult" class="summary-result" style="display: none; margin-top: 12px;">
+                    <h4 style="font-size: 13px; color: #667eea; margin-bottom: 8px;">📊 Bug 分析报告</h4>
+                    <div id="bugSummaryContent" style="font-size: 12px; line-height: 1.6; color: #333; white-space: pre-wrap;"></div>
+                  </div>
+
+                  <!-- 错误提示 -->
+                  <div id="bugSummaryError" class="summary-error" style="display: none; margin-top: 12px; padding: 8px; background: #fee; border-radius: 4px; font-size: 12px; color: #c00;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- OA 系统 -->
         <section class="system-section" id="oaSection" style="display: none;">
           <h2 class="section-title">
@@ -156,64 +289,6 @@
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-
-        <!-- 禅道 -->
-        <section class="system-section" id="zentaoSection" style="display: none;">
-          <h2 class="section-title">
-            <span class="icon">🐛</span>
-            禅道
-          </h2>
-          <div class="section-content">
-            <div class="info-item">
-              <span class="label">待处理任务:</span>
-              <span class="value" id="zentaoTasks">-</span>
-            </div>
-            <div class="info-item">
-              <span class="label">待修复 Bug:</span>
-              <span class="value" id="zentaoBugs">-</span>
-            </div>
-            <div class="info-item">
-              <span class="label">待评审需求:</span>
-              <span class="value" id="zentaoStories">-</span>
-            </div>
-          </div>
-        </section>
-
-        <!-- GitLab -->
-        <section class="system-section" id="gitlabSection" style="display: none;">
-          <h2 class="section-title">
-            <span class="icon">🦊</span>
-            GitLab
-          </h2>
-          <div class="section-content">
-            <div class="info-item">
-              <span class="label">今日提交:</span>
-              <span class="value" id="gitlabCommits">-</span>
-            </div>
-          </div>
-
-          <!-- AI 工作总结 -->
-          <div class="ai-summary-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee;">
-            <button id="generateSummaryBtn" class="btn btn-primary" style="width: 100%; font-size: 13px;">
-              🤖 生成工作总结
-            </button>
-
-            <!-- 总结加载中 -->
-            <div id="summaryLoading" class="summary-loading" style="display: none; text-align: center; padding: 12px;">
-              <div class="spinner" style="width: 20px; height: 20px; margin: 0 auto 8px;"></div>
-              <p style="font-size: 12px; color: #999;">AI 正在生成总结...</p>
-            </div>
-
-            <!-- 总结结果 -->
-            <div id="summaryResult" class="summary-result" style="display: none; margin-top: 12px;">
-              <h4 style="font-size: 13px; color: #667eea; margin-bottom: 8px;">📝 今日工作总结</h4>
-              <div id="summaryContent" style="font-size: 12px; line-height: 1.6; color: #333; white-space: pre-wrap;"></div>
-            </div>
-
-            <!-- 错误提示 -->
-            <div id="summaryError" class="summary-error" style="display: none; margin-top: 12px; padding: 8px; background: #fee; border-radius: 4px; font-size: 12px; color: #c00;"></div>
           </div>
         </section>
 
