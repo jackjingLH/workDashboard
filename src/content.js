@@ -404,21 +404,38 @@ function injectDishIcons() {
   console.log(`[Content Script] 已注入 ${injectedCount} 个菜品图标`);
 }
 
-// 提取菜品名称（从最后一个括号中提取）
+// 提取菜品名称（从第二个括号中提取）
 function extractDishName(text) {
-  // 尝试多种格式
-  // 格式1: "午餐A（25元）(啤酒鸭)"
-  let match = text.match(/\(([^)]+)\)$/);
-  if (match) return match[1].trim();
+  console.log(`[Content Script] 原始文本: "${text}"`);
 
-  // 格式2: "午餐A（25元）（啤酒鸭）" - 全角括号
-  match = text.match(/（([^）]+)）$/);
-  if (match) return match[1].trim();
+  // 提取所有括号内容（包括半角和全角），按照出现顺序
+  // 格式: "晚餐C-特色餐（20元）(土豆焖牛腩)(2/60)" 或 "晚餐C-特色餐（20元）(土豆焖牛腩)"
+  const allBrackets = [];
 
-  // 格式3: "(啤酒鸭)" 或 "（啤酒鸭）" 出现在任意位置
-  match = text.match(/[(（]([^)）]+)[)）]/);
-  if (match) return match[1].trim();
+  // 使用统一的正则匹配所有括号（半角和全角）
+  const bracketRegex = /[(（]([^)）]+)[)）]/g;
+  let match;
+  while ((match = bracketRegex.exec(text)) !== null) {
+    allBrackets.push(match[1].trim());
+  }
 
+  console.log(`[Content Script] 提取到 ${allBrackets.length} 个括号:`, allBrackets);
+
+  // 如果有至少2个括号，返回第二个（菜品名称）
+  if (allBrackets.length >= 2) {
+    const dishName = allBrackets[1];
+    console.log(`[Content Script] 提取菜名（第2个括号）: "${dishName}"`);
+    return dishName;
+  }
+
+  // 如果只有1个括号，可能是简化格式，返回第一个
+  if (allBrackets.length === 1) {
+    const dishName = allBrackets[0];
+    console.log(`[Content Script] 提取菜名（第1个括号）: "${dishName}"`);
+    return dishName;
+  }
+
+  console.log('[Content Script] 未找到括号，无法提取菜名');
   return null;
 }
 

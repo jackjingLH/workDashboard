@@ -35,7 +35,9 @@
     "cookies",
     "storage",
     "notifications",
-    "alarms"
+    "alarms",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "http://*/*",

@@ -397,13 +397,55 @@ async function fetchZentaoResolvedBugs(config) {
     console.log('[Zentao] POST 请求体:', formData.toString());
     console.log('[Zentao] POST 请求体大小:', formData.toString().length, '字节');
 
+    // 使用 declarativeNetRequest 修改请求头
+    const ruleId = 1; // 规则ID
+    const refererUrl = `${config.baseURL}/index.php?m=my&f=contribute&mode=bug&browseType=bySearch&queryID=myQueryID`;
+
+    console.log('[Zentao] 设置 declarativeNetRequest 规则...');
+    try {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [ruleId], // 先删除旧规则（如果存在）
+        addRules: [{
+          id: ruleId,
+          priority: 1,
+          action: {
+            type: 'modifyHeaders',
+            requestHeaders: [
+              { header: 'Origin', operation: 'set', value: config.baseURL },
+              { header: 'Referer', operation: 'set', value: refererUrl }
+            ]
+          },
+          condition: {
+            urlFilter: '*/index.php?m=search&f=buildQuery*',
+            resourceTypes: ['xmlhttprequest', 'other']
+          }
+        }]
+      });
+      console.log('[Zentao] declarativeNetRequest 规则已设置');
+    } catch (error) {
+      console.warn('[Zentao] 设置 declarativeNetRequest 规则失败:', error);
+    }
+
+    console.log('[Zentao] ========== POST buildQuery 请求详情 ==========');
+    console.log('[Zentao] URL:', buildQueryUrl);
+    console.log('[Zentao] Headers:', {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Origin': config.baseURL,
+      'Referer': `${config.baseURL}/index.php?m=my&f=contribute&mode=bug&browseType=bySearch&queryID=myQueryID`
+    });
+    console.log('[Zentao] ================================================');
+
     const buildQueryResponse = await fetch(buildQueryUrl, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json, text/html'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Origin': config.baseURL,
+        'Referer': `${config.baseURL}/index.php?m=my&f=contribute&mode=bug&browseType=bySearch&queryID=myQueryID`
       },
+      referrerPolicy: 'no-referrer-when-downgrade',
       body: formData
     });
 
@@ -412,9 +454,13 @@ async function fetchZentaoResolvedBugs(config) {
     }
 
     const buildQueryResponseText = await buildQueryResponse.text();
-    console.log('[Zentao] 搜索条件提交响应:', buildQueryResponseText.substring(0, 500));
+    console.log('[Zentao] ========== POST buildQuery 响应详情 ==========');
     console.log('[Zentao] 响应状态码:', buildQueryResponse.status);
     console.log('[Zentao] 响应头 Content-Type:', buildQueryResponse.headers.get('Content-Type'));
+    console.log('[Zentao] 响应内容长度:', buildQueryResponseText.length);
+    console.log('[Zentao] 响应内容（完整）:', buildQueryResponseText);
+    console.log('[Zentao] 是否包含重定向脚本:', buildQueryResponseText.includes('parent.location'));
+    console.log('[Zentao] ===============================================');
 
     // 第二步：获取 Bug 列表页面
     const url = `${config.baseURL}/index.php?m=my&f=contribute&mode=bug&browseType=bySearch&queryID=myQueryID`;
@@ -452,6 +498,16 @@ async function fetchZentaoResolvedBugs(config) {
     console.error('[Zentao] 获取已解决 Bug 列表失败:', error);
     if (error.needLogin) throw error;
     return [];
+  } finally {
+    // 清理 declarativeNetRequest 规则
+    try {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [1] // 清理规则ID 1
+      });
+      console.log('[Zentao] declarativeNetRequest 规则已清理');
+    } catch (error) {
+      // 忽略清理失败
+    }
   }
 }
 
